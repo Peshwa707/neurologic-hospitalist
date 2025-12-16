@@ -1,0 +1,36 @@
+{
+  "name": "neurologic-hospitalist-assistant",
+  "version": "1.0.0",
+  "description": "NeuroLogic Hospitalist Assistant - AI Clinical Decision Support for Hospitalists",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "postinstall": "cd server && npm install && cd ../client && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/medscribe-ai.git"
+  },
+  "keywords": [
+    "medical",
+    "transcription",
+    "ai",
+    "clinical",
+    "decision-support",
+    "healthcare",
+    "speech-to-text"
+  ],
+  "author": "",
+  "license": "MIT"
+}

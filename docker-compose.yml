@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  medscribe-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Development service (optional)
+  medscribe-ai-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    ports:
+      - "5173:5173"
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./client/src:/app/client/src
+      - ./server:/app/server
+    command: npm run dev
+    profiles:
+      - dev

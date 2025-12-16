@@ -1,0 +1,20 @@
+{
+  "name": "neurologic-hospitalist-server",
+  "version": "1.0.0",
+  "description": "NeuroLogic Hospitalist Assistant Backend",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
