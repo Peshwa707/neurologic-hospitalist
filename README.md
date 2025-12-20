@@ -45,9 +45,14 @@ NeuroLogic transforms clinical dictation into structured medical notes with inte
 - Automatic code extraction from clinical content
 
 ### 🧠 Clinical Decision Support
-- **Differential Diagnoses** - Ranked by likelihood
-- **Diagnostic Workup** - Recommended tests with rationale
+- **Differential Diagnoses** - Ranked by likelihood with supporting evidence
+- **Diagnostic Workup** - Recommended tests with rationale and priority
 - **Management Suggestions** - Evidence-based treatment recommendations
+- **Clinical Calculators** - CURB-65, CHA2DS2-VASc, Wells DVT, HAS-BLED, MELD
+- **Drug Interaction Checking** - Automatic detection of dangerous drug combinations
+- **Clinical Alerts** - Red flag detection for critical findings
+- **Evidence-Based Guidelines** - Quick access to IDSA, ACC/AHA, GOLD, AHA/ASA guidelines
+- **AI-Enhanced Decision Support** - Comprehensive clinical reasoning with automated safety checks
 
 ## 🚀 Quick Start
 
@@ -113,41 +118,74 @@ docker run -p 3001:3001 -e ANTHROPIC_API_KEY=your_key neurologic-hospitalist
 
 ## 🔧 API Endpoints
 
-### `POST /api/analyze`
-Complete clinical analysis with care progression and discharge readiness.
+### Core Analysis
+- **`POST /api/analyze`** - Complete clinical analysis with care progression and discharge readiness
+- **`POST /api/care-progression`** - Detailed care progression analysis and next steps
+- **`POST /api/discharge-readiness`** - Comprehensive discharge readiness assessment
+- **`POST /api/enhance-transcript`** - AI-powered transcript cleanup and enhancement
 
-### `POST /api/care-progression`
-Detailed care progression analysis and next steps.
+### Clinical Decision Support
+- **`POST /api/calculate`** - Run clinical calculators (CURB-65, CHA2DS2-VASc, Wells, HAS-BLED, MELD)
+- **`POST /api/check-interactions`** - Check drug-drug interactions for medication lists
+- **`POST /api/detect-alerts`** - Detect clinical red flags and critical findings
+- **`GET /api/guideline/:condition`** - Get evidence-based guidelines for specific conditions
+- **`GET /api/guidelines`** - List all available clinical guidelines
+- **`POST /api/clinical-decision-support`** - Comprehensive AI-powered clinical decision support
 
-### `POST /api/discharge-readiness`
-Comprehensive discharge readiness assessment.
+### Utilities
+- **`POST /api/lookup-codes`** - Look up ICD-10 and CPT codes
+- **`GET /api/health`** - Health check endpoint
 
-### `POST /api/enhance-transcript`
-AI-powered transcript cleanup and enhancement.
-
-### `GET /api/health`
-Health check endpoint.
+📖 **Detailed API Documentation**: See [CLINICAL_DECISION_SUPPORT.md](CLINICAL_DECISION_SUPPORT.md) for comprehensive examples and usage patterns.
 
 ## 🏗️ Project Structure
 
 ```
 neurologic-hospitalist/
-├── client/                 # React frontend
+├── client/                           # React frontend
 │   ├── src/
-│   │   ├── App.jsx        # Main component
-│   │   ├── App.css        # Styles
-│   │   └── main.jsx       # Entry point
+│   │   ├── App.jsx                  # Main component
+│   │   ├── App.css                  # Styles
+│   │   └── main.jsx                 # Entry point
 │   └── ...
-├── server/                 # Express backend
-│   ├── index.js           # API server
-│   ├── .env               # Environment variables
+├── server/                           # Express backend
+│   ├── index.js                     # API server with all endpoints
+│   ├── clinicalDecisionSupport.js   # CDS engine (calculators, alerts, guidelines)
+│   ├── .env                         # Environment variables
 │   └── package.json
+├── examples/
+│   └── clinical-decision-support-examples.js  # API usage examples
 ├── Dockerfile
 ├── docker-compose.yml
 ├── railway.json
 ├── render.yaml
-└── README.md
+├── README.md
+└── CLINICAL_DECISION_SUPPORT.md     # Comprehensive CDS documentation
 ```
+
+## 🧪 Testing the Clinical Decision Support API
+
+After starting the development server, you can test the new CDS endpoints:
+
+```bash
+# Run the automated test suite
+./examples/test-cds-api.sh
+
+# Or test individual endpoints with curl
+curl -X POST http://localhost:3001/api/calculate \
+  -H "Content-Type: application/json" \
+  -d '{"calculatorType": "curb65", "params": {"confusion": true, "urea": 25, "respiratoryRate": 32, "bloodPressure": {"systolic": 85, "diastolic": 55}, "age": 78}}'
+
+# Check drug interactions
+curl -X POST http://localhost:3001/api/check-interactions \
+  -H "Content-Type: application/json" \
+  -d '{"medications": ["warfarin", "aspirin", "amiodarone"]}'
+
+# Get clinical guidelines
+curl http://localhost:3001/api/guideline/pneumonia
+```
+
+See [examples/clinical-decision-support-examples.js](examples/clinical-decision-support-examples.js) for complete usage examples in JavaScript.
 
 ## 📱 Usage Guide
 
@@ -158,6 +196,11 @@ neurologic-hospitalist/
 3. **Click Analyze**: Get structured note, care progression, and discharge readiness
 4. **Review Next Steps**: See prioritized actions to progress care
 5. **Check Discharge Readiness**: Identify barriers and criteria to address
+6. **Use Clinical Tools**:
+   - Calculate risk scores (CURB-65 for pneumonia, CHA2DS2-VASc for AFib)
+   - Check for drug interactions before prescribing
+   - Review evidence-based guidelines for the condition
+   - Monitor for clinical alerts and red flags
 
 ### Sample Clinical Context Input
 
