@@ -733,6 +733,174 @@ function App() {
             </div>
           </div>
 
+          {/* Cognitive Biases */}
+          {analysisResults?.cognitiveBiases?.length > 0 && (
+            <div className="card bias-card">
+              <div className="card-header">
+                <span className="card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="2">
+                    <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+                    <path d="M12 6v6l4 2"/>
+                  </svg>
+                  ⚠️ Cognitive Bias Alerts
+                </span>
+              </div>
+              <div className="card-body">
+                <div className="bias-list">
+                  {analysisResults.cognitiveBiases.map((bias, i) => (
+                    <div key={i} className="bias-item">
+                      <div className="bias-header">
+                        <span className="bias-type">{bias.biasType}</span>
+                        {bias.severity && (
+                          <span className={`severity-badge ${bias.severity}`}>{bias.severity}</span>
+                        )}
+                      </div>
+                      <p className="bias-evidence"><strong>Evidence:</strong> {bias.evidence}</p>
+                      {bias.impact && <p className="bias-impact"><strong>Impact:</strong> {bias.impact}</p>}
+                      {bias.mitigation && (
+                        <div className="bias-mitigation">
+                          <strong>Mitigation:</strong>
+                          {typeof bias.mitigation === 'string' ? (
+                            <p>{bias.mitigation}</p>
+                          ) : Array.isArray(bias.mitigation) ? (
+                            <ul>
+                              {bias.mitigation.map((m, idx) => (
+                                <li key={idx}>{m}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>{bias.mitigation}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Logical Fallacies */}
+          {analysisResults?.logicalFallacies?.length > 0 && (
+            <div className="card fallacy-card">
+              <div className="card-header">
+                <span className="card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  Logical Reasoning Analysis
+                </span>
+              </div>
+              <div className="card-body">
+                <div className="fallacy-list">
+                  {analysisResults.logicalFallacies.map((fallacy, i) => (
+                    <div key={i} className="fallacy-item">
+                      <div className="fallacy-header">
+                        <span className="fallacy-type">{fallacy.fallacyType}</span>
+                      </div>
+                      <p className="fallacy-description">{fallacy.description}</p>
+                      {fallacy.correction && (
+                        <p className="fallacy-correction"><strong>Correction:</strong> {fallacy.correction}</p>
+                      )}
+                      {fallacy.problemWithReasoning && (
+                        <p className="fallacy-problem"><strong>Issue:</strong> {fallacy.problemWithReasoning}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Alternative Diagnoses */}
+          {analysisResults?.alternativeDiagnoses?.length > 0 && (
+            <div className="card alternative-card">
+              <div className="card-header">
+                <span className="card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
+                  </svg>
+                  Alternative Diagnoses to Consider
+                </span>
+              </div>
+              <div className="card-body">
+                <div className="alternative-list">
+                  {analysisResults.alternativeDiagnoses.map((alt, i) => (
+                    <div key={i} className="alternative-item">
+                      <div className="alternative-diagnosis">{alt.diagnosis}</div>
+                      <p className="alternative-reason"><strong>Why Consider:</strong> {alt.whyConsider}</p>
+                      {alt.distinguishingFeatures && (
+                        <p className="alternative-features"><strong>Distinguishing Features:</strong> {alt.distinguishingFeatures}</p>
+                      )}
+                      {alt.consequenceOfMissing && (
+                        <p className="alternative-consequence"><strong>If Missed:</strong> {alt.consequenceOfMissing}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Reasoning Quality */}
+          {analysisResults?.reasoningQuality && (
+            <div className="card reasoning-card">
+              <div className="card-header">
+                <span className="card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  Reasoning Quality Assessment
+                </span>
+              </div>
+              <div className="card-body">
+                <div className="reasoning-section">
+                  {analysisResults.reasoningQuality.strengths?.length > 0 && (
+                    <div className="reasoning-strengths">
+                      <h5>✓ Strengths</h5>
+                      <ul>
+                        {analysisResults.reasoningQuality.strengths.map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {analysisResults.reasoningQuality.weaknesses?.length > 0 && (
+                    <div className="reasoning-weaknesses">
+                      <h5>⚠ Areas for Improvement</h5>
+                      <ul>
+                        {analysisResults.reasoningQuality.weaknesses.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {analysisResults.reasoningQuality.uncertaintyFactors?.length > 0 && (
+                    <div className="reasoning-uncertainty">
+                      <h5>? Key Uncertainties</h5>
+                      <ul>
+                        {analysisResults.reasoningQuality.uncertaintyFactors.map((u, i) => (
+                          <li key={i}>{u}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {analysisResults.reasoningQuality.recommendedApproach && (
+                    <div className="reasoning-recommendation">
+                      <h5>Recommended Approach</h5>
+                      <p>{analysisResults.reasoningQuality.recommendedApproach}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Disclaimer */}
           <div className="disclaimer">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
