@@ -16,17 +16,84 @@ function App() {
   const [activeTab, setActiveTab] = useState('context');
   const [activeResultTab, setActiveResultTab] = useState('note');
   const [apiStatus, setApiStatus] = useState('checking');
-  
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [savingApiKey, setSavingApiKey] = useState(false);
+
+  // Image analysis state
+  const [ekgImage, setEkgImage] = useState(null);
+  const [ekgImagePreview, setEkgImagePreview] = useState('');
+  const [ekgAnalysisResult, setEkgAnalysisResult] = useState(null);
+  const [isAnalyzingEkg, setIsAnalyzingEkg] = useState(false);
+
+  const [imagingImage, setImagingImage] = useState(null);
+  const [imagingImagePreview, setImagingImagePreview] = useState('');
+  const [imagingType, setImagingType] = useState('chest-xray');
+  const [imagingQuestion, setImagingQuestion] = useState('');
+  const [imagingAnalysisResult, setImagingAnalysisResult] = useState(null);
+  const [isAnalyzingImaging, setIsAnalyzingImaging] = useState(false);
+
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
+  const ekgFileInputRef = useRef(null);
+  const imagingFileInputRef = useRef(null);
 
-  // Check API health on mount
+  // Check API health and configuration status on mount
   useEffect(() => {
     fetch(`${API_URL}/api/health`)
       .then(res => res.json())
-      .then(() => setApiStatus('connected'))
+      .then(data => {
+        setApiStatus('connected');
+        setApiKeyConfigured(data.apiKeyConfigured || false);
+        // Show settings modal if API key is not configured
+        if (!data.apiKeyConfigured) {
+          setShowSettings(true);
+        }
+      })
       .catch(() => setApiStatus('disconnected'));
   }, []);
+
+  // Function to save API key
+  const saveApiKey = async () => {
+    if (!apiKey.trim()) {
+      setError('Please enter an API key');
+      return;
+    }
+
+    setSavingApiKey(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/config/api-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKey.trim() })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save API key');
+      }
+
+      setApiKeyConfigured(true);
+      setShowSettings(false);
+      setApiKey(''); // Clear the input for security
+      setApiStatus('connected');
+
+      // Refresh health check
+      fetch(`${API_URL}/api/health`)
+        .then(res => res.json())
+        .then(data => setApiKeyConfigured(data.apiKeyConfigured || false));
+
+    } catch (err) {
+      console.error('API key save error:', err);
+      setError(err.message || 'Failed to save API key. Please check your key and try again.');
+    } finally {
+      setSavingApiKey(false);
+    }
+  };
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -200,6 +267,155 @@ function App() {
     return '#ef4444';
   };
 
+  // EKG Image Handling
+  const handleEkgImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target.result;
+      setEkgImage(base64);
+      setEkgImagePreview(base64);
+      setEkgAnalysisResult(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const analyzeEkg = async () => {
+    if (!ekgImage || isAnalyzingEkg) return;
+
+    if (apiStatus !== 'connected') {
+      setError('Backend server not connected. Please check your deployment.');
+      return;
+    }
+
+    setIsAnalyzingEkg(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/analyze-ekg`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: ekgImage,
+          clinicalContext: clinicalContext,
+          patientData: {
+            demographics: 'Extracted from clinical context if available'
+          }
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'EKG analysis failed');
+      }
+
+      if (data.success && data.data) {
+        setEkgAnalysisResult(data.data);
+        setActiveTab('ekg');
+      } else {
+        throw new Error('Invalid response format');
+      }
+    } catch (err) {
+      console.error('EKG analysis error:', err);
+      setError(err.message || 'EKG analysis failed. Please try again.');
+    } finally {
+      setIsAnalyzingEkg(false);
+    }
+  };
+
+  const clearEkg = () => {
+    setEkgImage(null);
+    setEkgImagePreview('');
+    setEkgAnalysisResult(null);
+    if (ekgFileInputRef.current) {
+      ekgFileInputRef.current.value = '';
+    }
+  };
+
+  // Imaging Handling
+  const handleImagingImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target.result;
+      setImagingImage(base64);
+      setImagingImagePreview(base64);
+      setImagingAnalysisResult(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const analyzeImaging = async () => {
+    if (!imagingImage || isAnalyzingImaging) return;
+
+    if (apiStatus !== 'connected') {
+      setError('Backend server not connected. Please check your deployment.');
+      return;
+    }
+
+    setIsAnalyzingImaging(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/analyze-imaging`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: imagingImage,
+          imagingType: imagingType,
+          clinicalContext: clinicalContext,
+          clinicalQuestion: imagingQuestion,
+          patientData: {
+            demographics: 'Extracted from clinical context if available'
+          }
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Imaging analysis failed');
+      }
+
+      if (data.success && data.data) {
+        setImagingAnalysisResult(data.data);
+        setActiveTab('imaging');
+      } else {
+        throw new Error('Invalid response format');
+      }
+    } catch (err) {
+      console.error('Imaging analysis error:', err);
+      setError(err.message || 'Imaging analysis failed. Please try again.');
+    } finally {
+      setIsAnalyzingImaging(false);
+    }
+  };
+
+  const clearImaging = () => {
+    setImagingImage(null);
+    setImagingImagePreview('');
+    setImagingAnalysisResult(null);
+    setImagingQuestion('');
+    if (imagingFileInputRef.current) {
+      imagingFileInputRef.current.value = '';
+    }
+  };
+
   const noteTypes = [
     { id: 'progress', label: 'Progress' },
     { id: 'hp', label: 'H&P' },
@@ -230,6 +446,30 @@ function App() {
             <span className="status-dot"></span>
             {apiStatus === 'connected' ? 'Connected' : apiStatus === 'checking' ? 'Checking...' : 'Disconnected'}
           </span>
+          {!apiKeyConfigured && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="settings-btn warning"
+              title="Configure API Key"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Setup Required
+            </button>
+          )}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="settings-btn"
+            title="Settings"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v6m0 6v6M6 12H1m6 0h6m6 0h5"/>
+            </svg>
+          </button>
           <span className="badge">AI Clinical Decision Support</span>
         </div>
       </header>
@@ -331,6 +571,28 @@ function App() {
                 Dictation
                 {transcript && <span className="tab-dot"></span>}
               </button>
+              <button
+                onClick={() => setActiveTab('ekg')}
+                className={`tab ${activeTab === 'ekg' ? 'active' : ''}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                EKG
+                {ekgImagePreview && <span className="tab-dot"></span>}
+              </button>
+              <button
+                onClick={() => setActiveTab('imaging')}
+                className={`tab ${activeTab === 'imaging' ? 'active' : ''}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+                Imaging
+                {imagingImagePreview && <span className="tab-dot"></span>}
+              </button>
             </div>
 
             {activeTab === 'context' && (
@@ -400,6 +662,325 @@ function App() {
 "72 year old female hospital day 3 with CAP, improving. Overnight no events, no fever. She reports feeling better, cough improving, less SOB. Tolerating PO well. Ambulated with PT yesterday and did well. On exam alert and oriented, lungs with decreased crackles at right base, improved air movement. Plan to transition to oral antibiotics today, continue to monitor, PT to reassess, anticipate discharge tomorrow if continues to improve. Will arrange home health for medication management and follow up with PCP in 1 week."`}
                   className="text-area"
                 />
+              </div>
+            )}
+
+            {/* EKG Tab */}
+            {activeTab === 'ekg' && (
+              <div className="card-body">
+                <div className="input-header">
+                  <span className="input-label">EKG Analysis</span>
+                  <div className="image-controls">
+                    <input
+                      type="file"
+                      ref={ekgFileInputRef}
+                      onChange={handleEkgImageUpload}
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      onClick={() => ekgFileInputRef.current?.click()}
+                      className="upload-btn"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                      Upload EKG Image
+                    </button>
+                    {ekgImagePreview && (
+                      <>
+                        <button onClick={analyzeEkg} disabled={isAnalyzingEkg} className="analyze-btn">
+                          {isAnalyzingEkg ? (
+                            <>
+                              <div className="spinner"></div>
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                              </svg>
+                              Analyze EKG
+                            </>
+                          )}
+                        </button>
+                        <button onClick={clearEkg} className="clear-btn">Clear</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {ekgImagePreview && (
+                  <div className="image-preview">
+                    <img src={ekgImagePreview} alt="EKG" style={{ maxWidth: '100%', maxHeight: '400px' }} />
+                  </div>
+                )}
+                {ekgAnalysisResult && (
+                  <div className="analysis-results">
+                    <h4 className="analysis-title">EKG Interpretation</h4>
+
+                    {/* Rate and Rhythm */}
+                    <div className="analysis-section">
+                      <h5>Rate & Rhythm</h5>
+                      <p><strong>Ventricular Rate:</strong> {ekgAnalysisResult.rate?.ventricular}</p>
+                      <p><strong>Rhythm:</strong> {ekgAnalysisResult.rhythm?.description}</p>
+                      <p><strong>Regularity:</strong> {ekgAnalysisResult.rhythm?.regularity}</p>
+                    </div>
+
+                    {/* Critical Alerts */}
+                    {ekgAnalysisResult.criticalAlerts?.length > 0 && (
+                      <div className="analysis-section critical">
+                        <h5>⚠️ Critical Alerts</h5>
+                        {ekgAnalysisResult.criticalAlerts.map((alert, i) => (
+                          <div key={i} className="alert-item">
+                            <p><strong>{alert.alert}</strong></p>
+                            <p>Action: {alert.action}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Interpretation */}
+                    <div className="analysis-section">
+                      <h5>Interpretation</h5>
+                      <p><strong>Primary:</strong> {ekgAnalysisResult.interpretation?.primary}</p>
+                      {ekgAnalysisResult.interpretation?.additional?.length > 0 && (
+                        <ul>
+                          {ekgAnalysisResult.interpretation.additional.map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    {/* Findings */}
+                    {ekgAnalysisResult.findings?.length > 0 && (
+                      <div className="analysis-section">
+                        <h5>Findings</h5>
+                        {ekgAnalysisResult.findings.map((finding, i) => (
+                          <div key={i} className="finding-item">
+                            <p><strong>{finding.category}:</strong> {finding.finding}</p>
+                            <p className={`severity-${finding.severity?.toLowerCase()}`}>
+                              Severity: {finding.severity}
+                            </p>
+                            {finding.leads?.length > 0 && (
+                              <p>Leads: {finding.leads.join(', ')}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    {ekgAnalysisResult.recommendations?.length > 0 && (
+                      <div className="analysis-section">
+                        <h5>Recommendations</h5>
+                        {ekgAnalysisResult.recommendations.map((rec, i) => (
+                          <div key={i} className={`recommendation-item priority-${rec.priority?.toLowerCase()}`}>
+                            <p><strong>{rec.action}</strong></p>
+                            <p>{rec.rationale}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Urgency */}
+                    <div className={`analysis-section urgency-${ekgAnalysisResult.urgency?.level?.toLowerCase().replace(/\s/g, '-')}`}>
+                      <h5>Urgency Assessment</h5>
+                      <p><strong>Level:</strong> {ekgAnalysisResult.urgency?.level}</p>
+                      <p><strong>Timeframe:</strong> {ekgAnalysisResult.urgency?.timeframe}</p>
+                      <p>{ekgAnalysisResult.urgency?.reasoning}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Imaging Tab */}
+            {activeTab === 'imaging' && (
+              <div className="card-body">
+                <div className="input-header">
+                  <span className="input-label">Medical Imaging Analysis</span>
+                  <div className="imaging-type-selector">
+                    <select
+                      value={imagingType}
+                      onChange={(e) => setImagingType(e.target.value)}
+                      className="imaging-type-select"
+                    >
+                      <option value="chest-xray">Chest X-ray</option>
+                      <option value="abdominal-xray">Abdominal X-ray</option>
+                      <option value="ct-head">CT Head</option>
+                      <option value="ct-chest">CT Chest</option>
+                      <option value="ct-abdomen">CT Abdomen/Pelvis</option>
+                      <option value="mri-brain">MRI Brain</option>
+                      <option value="mri-spine">MRI Spine</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="image-controls">
+                    <input
+                      type="file"
+                      ref={imagingFileInputRef}
+                      onChange={handleImagingImageUpload}
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      onClick={() => imagingFileInputRef.current?.click()}
+                      className="upload-btn"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                      </svg>
+                      Upload Image
+                    </button>
+                    {imagingImagePreview && (
+                      <>
+                        <button onClick={analyzeImaging} disabled={isAnalyzingImaging} className="analyze-btn">
+                          {isAnalyzingImaging ? (
+                            <>
+                              <div className="spinner"></div>
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                              </svg>
+                              Analyze Imaging
+                            </>
+                          )}
+                        </button>
+                        <button onClick={clearImaging} className="clear-btn">Clear</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Clinical Question Input */}
+                <textarea
+                  value={imagingQuestion}
+                  onChange={(e) => setImagingQuestion(e.target.value)}
+                  placeholder="Optional: Specific clinical question (e.g., 'Rule out pneumonia', 'Evaluate for free air')"
+                  className="clinical-question-input"
+                  rows="2"
+                />
+
+                {imagingImagePreview && (
+                  <div className="image-preview">
+                    <img src={imagingImagePreview} alt="Medical Imaging" style={{ maxWidth: '100%', maxHeight: '400px' }} />
+                  </div>
+                )}
+
+                {imagingAnalysisResult && (
+                  <div className="analysis-results">
+                    <h4 className="analysis-title">Imaging Interpretation</h4>
+
+                    {/* Study Information */}
+                    <div className="analysis-section">
+                      <h5>Study Information</h5>
+                      <p><strong>Modality:</strong> {imagingAnalysisResult.studyInformation?.modalityConfirmed}</p>
+                      <p><strong>Quality:</strong> {imagingAnalysisResult.studyInformation?.technicalQuality}</p>
+                      {imagingAnalysisResult.studyInformation?.viewsPresent?.length > 0 && (
+                        <p><strong>Views:</strong> {imagingAnalysisResult.studyInformation.viewsPresent.join(', ')}</p>
+                      )}
+                    </div>
+
+                    {/* Critical Findings */}
+                    {imagingAnalysisResult.acuteFindings?.present && imagingAnalysisResult.acuteFindings?.criticalFindings?.length > 0 && (
+                      <div className="analysis-section critical">
+                        <h5>🚨 Critical Findings</h5>
+                        {imagingAnalysisResult.acuteFindings.criticalFindings.map((finding, i) => (
+                          <div key={i} className="critical-finding">
+                            <p><strong>{finding.finding}</strong></p>
+                            <p>Location: {finding.location}</p>
+                            <p>Action: {finding.clinicalAction}</p>
+                            <p className="timeframe">Timeframe: {finding.timeframe}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Primary Findings */}
+                    {imagingAnalysisResult.systematicReview?.primaryFindings?.length > 0 && (
+                      <div className="analysis-section">
+                        <h5>Primary Findings</h5>
+                        {imagingAnalysisResult.systematicReview.primaryFindings.map((finding, i) => (
+                          <div key={i} className="finding-item">
+                            <p><strong>Location:</strong> {finding.anatomicalLocation}</p>
+                            <p><strong>Finding:</strong> {finding.finding}</p>
+                            {finding.size && <p><strong>Size:</strong> {finding.size}</p>}
+                            <p><strong>Significance:</strong> {finding.significance}</p>
+                            <p className={`acuity-${finding.acuity?.toLowerCase()}`}>
+                              Acuity: {finding.acuity}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Impressions */}
+                    {imagingAnalysisResult.impressions?.length > 0 && (
+                      <div className="analysis-section">
+                        <h5>Impressions</h5>
+                        {imagingAnalysisResult.impressions.map((impression, i) => (
+                          <div key={i} className={`impression-item severity-${impression.severity?.toLowerCase()}`}>
+                            <p><strong>{impression.finding}</strong></p>
+                            <p>Severity: {impression.severity} | Urgency: {impression.urgency}</p>
+                            <p>Confidence: {impression.confidence}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Differential Diagnosis */}
+                    {imagingAnalysisResult.differentialDiagnosis?.length > 0 && (
+                      <div className="analysis-section">
+                        <h5>Differential Diagnosis</h5>
+                        {imagingAnalysisResult.differentialDiagnosis.map((dx, i) => (
+                          <div key={i} className="differential-item">
+                            <p><strong>{dx.diagnosis}</strong> (Likelihood: {dx.likelihood})</p>
+                            {dx.supportingFeatures?.length > 0 && (
+                              <p>Supporting: {dx.supportingFeatures.join(', ')}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    <div className="analysis-section">
+                      <h5>Recommendations</h5>
+                      {imagingAnalysisResult.recommendations?.immediate?.length > 0 && (
+                        <div className="recommendation-group">
+                          <h6>Immediate:</h6>
+                          {imagingAnalysisResult.recommendations.immediate.map((rec, i) => (
+                            <p key={i}>• {rec.recommendation} - {rec.rationale}</p>
+                          ))}
+                        </div>
+                      )}
+                      {imagingAnalysisResult.recommendations?.followUp?.length > 0 && (
+                        <div className="recommendation-group">
+                          <h6>Follow-up:</h6>
+                          {imagingAnalysisResult.recommendations.followUp.map((rec, i) => (
+                            <p key={i}>• {rec.recommendation} ({rec.timeframe})</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Urgency Assessment */}
+                    <div className={`analysis-section urgency-${imagingAnalysisResult.urgencyAssessment?.overallUrgency?.toLowerCase()}`}>
+                      <h5>Urgency Assessment</h5>
+                      <p><strong>Overall Urgency:</strong> {imagingAnalysisResult.urgencyAssessment?.overallUrgency}</p>
+                      <p>{imagingAnalysisResult.urgencyAssessment?.reasoning}</p>
+                      <p><strong>Communication:</strong> {imagingAnalysisResult.urgencyAssessment?.communicationNeeded}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -912,6 +1493,124 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => !apiKeyConfigured ? null : setShowSettings(false)}>
+          <div className="modal-content settings-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M12 1v6m0 6v6M6 12H1m6 0h6m6 0h5"/>
+                </svg>
+                Settings
+              </h2>
+              {apiKeyConfigured && (
+                <button onClick={() => setShowSettings(false)} className="modal-close">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            <div className="modal-body">
+              {!apiKeyConfigured && (
+                <div className="setup-notice">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <h3>Setup Required</h3>
+                  <p>An Anthropic API key is required to use NeuroLogic Hospitalist Assistant.</p>
+                </div>
+              )}
+
+              <div className="settings-section">
+                <label className="settings-label">
+                  <span className="label-text">
+                    <strong>Anthropic API Key</strong>
+                    {apiKeyConfigured && <span className="configured-badge">✓ Configured</span>}
+                  </span>
+                  <span className="label-hint">
+                    Get your API key from{' '}
+                    <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">
+                      console.anthropic.com
+                    </a>
+                  </span>
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={apiKeyConfigured ? "Enter new key to update..." : "sk-ant-api03-..."}
+                  className="settings-input"
+                  onKeyPress={(e) => e.key === 'Enter' && saveApiKey()}
+                />
+                <div className="settings-help">
+                  <p>
+                    <strong>Your API key is stored securely</strong> in the application runtime and is never logged or transmitted except to Anthropic's API.
+                  </p>
+                  <p>
+                    <strong>New to Anthropic?</strong> Sign up for free credits at{' '}
+                    <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">
+                      console.anthropic.com
+                    </a>
+                  </p>
+                </div>
+              </div>
+
+              {error && (
+                <div className="settings-error">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  {error}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              {apiKeyConfigured && (
+                <button
+                  onClick={() => {
+                    setShowSettings(false);
+                    setApiKey('');
+                    setError('');
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                onClick={saveApiKey}
+                disabled={savingApiKey || !apiKey.trim()}
+                className="btn-primary"
+              >
+                {savingApiKey ? (
+                  <>
+                    <div className="spinner"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    {apiKeyConfigured ? 'Update API Key' : 'Save & Continue'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
