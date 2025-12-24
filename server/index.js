@@ -10,6 +10,11 @@ import {
   clinicalAlerts,
   clinicalGuidelines
 } from './clinicalDecisionSupport.js';
+import {
+  generateBiasDetectionPrompt,
+  generateAlternativeDiagnosisPrompt,
+  getAllBiasesAndFallacies
+} from './cognitiveBiasDetector.js';
 
 dotenv.config();
 
@@ -600,8 +605,10 @@ app.post('/api/clinical-decision-support', async (req, res) => {
       return res.status(400).json({ error: 'Clinical scenario or question required' });
     }
 
-    // Build comprehensive prompt for Claude
-    let prompt = `You are NeuroLogic Clinical Decision Support AI. Provide evidence-based clinical decision support.
+    // Build comprehensive prompt for Claude with cognitive bias detection
+    const biasDetectionPrompt = generateBiasDetectionPrompt();
+
+    let prompt = `You are NeuroLogic Clinical Decision Support AI. Provide evidence-based clinical decision support with explicit attention to cognitive biases and logical fallacies in clinical reasoning.
 
 CLINICAL SCENARIO:
 ${clinicalScenario || 'Not provided'}
@@ -614,25 +621,45 @@ ${question || 'Provide comprehensive clinical decision support for this case'}
 
 Please provide:
 1. Clinical Assessment - Key findings and their significance
-2. Differential Diagnosis - Ranked by likelihood with supporting evidence
+2. Differential Diagnosis - Ranked by likelihood with supporting evidence, including alternative diagnoses and atypical presentations
 3. Recommended Workup - Diagnostic tests with rationale and priority
 4. Evidence-Based Management - Treatment recommendations with references to guidelines
 5. Risk Stratification - Identify high-risk features and prognosis
 6. Disposition Recommendation - Admit vs discharge, level of care needed
 7. Follow-up Plan - What to monitor and when
 8. Red Flags - Warning signs requiring urgent action
+9. Cognitive Bias Analysis - Identify potential cognitive biases affecting this clinical reasoning
+10. Logical Reasoning Analysis - Assess for logical fallacies in the diagnostic or therapeutic reasoning
+
+${biasDetectionPrompt}
 
 Format as JSON:
 {
   "assessment": "Clinical assessment text",
   "differentials": [
-    {"diagnosis": "Diagnosis", "likelihood": "high/medium/low", "supportingEvidence": ["Evidence"]}
+    {
+      "diagnosis": "Diagnosis",
+      "likelihood": "high/medium/low",
+      "supportingEvidence": ["Evidence"],
+      "contradictoryEvidence": ["Evidence that does not fit this diagnosis"],
+      "mustNotMiss": false,
+      "typicalPresentation": true/false,
+      "alternativeExplanations": ["Alternative ways to explain the same findings"]
+    }
+  ],
+  "alternativeDiagnoses": [
+    {
+      "diagnosis": "Less common but important alternative",
+      "whyConsider": "Reason to consider this alternative",
+      "distinguishingFeatures": "What would confirm or rule out",
+      "consequenceOfMissing": "What happens if we miss this"
+    }
   ],
   "workup": [
-    {"test": "Test name", "rationale": "Why needed", "priority": "stat/urgent/routine"}
+    {"test": "Test name", "rationale": "Why needed", "priority": "stat/urgent/routine", "willChangeManagement": true/false}
   ],
   "management": [
-    {"recommendation": "Recommendation", "evidence": "Guideline or study", "priority": "high/medium/low"}
+    {"recommendation": "Recommendation", "evidence": "Guideline or study", "priority": "high/medium/low", "alternatives": ["Alternative approaches"]}
   ],
   "riskFactors": ["Risk factor"],
   "prognosis": "Prognosis summary",
@@ -647,9 +674,32 @@ Format as JSON:
   "redFlags": [
     {"finding": "Red flag", "action": "What to do"}
   ],
+  "cognitiveBiases": [
+    {
+      "biasType": "Name of bias (e.g., Anchoring Bias, Confirmation Bias)",
+      "evidence": "Specific evidence suggesting this bias may be present",
+      "impact": "How this bias could affect clinical decision-making",
+      "mitigation": "Specific strategies to mitigate this bias in this case"
+    }
+  ],
+  "logicalFallacies": [
+    {
+      "fallacyType": "Name of fallacy (e.g., Post Hoc Ergo Propter Hoc)",
+      "description": "How this fallacy manifests in the reasoning",
+      "correction": "How to correct the reasoning"
+    }
+  ],
+  "reasoningQuality": {
+    "strengths": ["Strong aspects of the clinical reasoning"],
+    "weaknesses": ["Gaps or weaknesses in the reasoning"],
+    "uncertaintyFactors": ["Key uncertainties that should be acknowledged"],
+    "recommendedApproach": "Overall recommendation for approaching this case to minimize cognitive errors"
+  },
   "calculatorSuggestions": ["Suggested clinical calculators to use"],
   "guidelineReferences": ["Relevant clinical guidelines"]
 }
+
+IMPORTANT: Be thorough in identifying potential cognitive biases and logical fallacies. Even if the clinical reasoning appears sound, consider potential biases that could be present.
 
 Return ONLY valid JSON.`;
 
@@ -764,6 +814,345 @@ Return ONLY valid JSON.`;
     res.status(500).json({
       error: error.message || 'Clinical decision support failed. Please try again.'
     });
+  }
+});
+
+// Alternative Diagnosis Exploration endpoint
+app.post('/api/explore-alternatives', async (req, res) => {
+  try {
+    const { clinicalScenario, currentDifferential, patientData } = req.body;
+
+    if (!clinicalScenario || !currentDifferential) {
+      return res.status(400).json({
+        error: 'Clinical scenario and current differential diagnosis required'
+      });
+    }
+
+    const explorationPrompt = generateAlternativeDiagnosisPrompt(currentDifferential);
+
+    const prompt = `You are NeuroLogic Clinical Decision Support AI with expertise in metacognitive analysis and diagnostic reasoning.
+
+CLINICAL SCENARIO:
+${clinicalScenario}
+
+PATIENT DATA:
+${JSON.stringify(patientData, null, 2) || 'Not provided'}
+
+${explorationPrompt}
+
+Provide a comprehensive JSON response:
+{
+  "metacognitiveAnalysis": {
+    "leadingDiagnosisChallenge": {
+      "unexplainedFindings": ["Findings not explained by leading diagnosis"],
+      "contradictoryEvidence": ["Evidence against leading diagnosis"],
+      "missingExpectedFindings": ["What you would expect to see but don't"],
+      "baseRateConsideration": "Is this diagnosis common enough to be likely in this population?",
+      "anchoringRisk": "Assessment of whether anchoring bias is present"
+    },
+    "mustNotMissDiagnoses": [
+      {
+        "diagnosis": "Life-threatening or time-sensitive diagnosis",
+        "presentation": "How it could present in this case",
+        "consequence": "What happens if missed",
+        "ruleOutStrategy": "How to definitively rule out"
+      }
+    ],
+    "atypicalPresentations": [
+      {
+        "commonDiagnosis": "Common diagnosis that might present atypically",
+        "atypicalFeatures": "What makes this presentation atypical",
+        "modificyingFactors": "Age, gender, comorbidities affecting presentation"
+      }
+    ],
+    "multipleDiagnoses": {
+      "likelihood": "Could patient have >1 concurrent condition?",
+      "possibleCombinations": [
+        {
+          "diagnoses": ["Diagnosis 1", "Diagnosis 2"],
+          "rationale": "Why these might coexist",
+          "howToDetect": "How to identify both"
+        }
+      ]
+    },
+    "systematicDifferential": {
+      "vascular": ["Vascular causes"],
+      "infectious": ["Infectious causes"],
+      "neoplastic": ["Neoplastic causes"],
+      "drugs": ["Drug-related causes"],
+      "inflammatory": ["Inflammatory causes"],
+      "congenital": ["Congenital causes"],
+      "autoimmune": ["Autoimmune causes"],
+      "trauma": ["Traumatic causes"],
+      "endocrine": ["Endocrine causes"],
+      "other": ["Other causes"]
+    }
+  },
+  "expandedDifferential": [
+    {
+      "diagnosis": "Diagnosis",
+      "likelihood": "high/medium/low/very low but important",
+      "reasoning": "Explicit reasoning for inclusion",
+      "supportingEvidence": ["Evidence for"],
+      "contradictoryEvidence": ["Evidence against"],
+      "distinguishingTest": "Single best test to confirm/exclude",
+      "clinicalPearl": "Key clinical insight"
+    }
+  ],
+  "diagnosticUncertainty": {
+    "keyMissingInformation": ["What information would most reduce uncertainty"],
+    "diagnosticTestUtility": [
+      {
+        "test": "Test name",
+        "sensitivity": "High/Medium/Low",
+        "specificity": "High/Medium/Low",
+        "howItHelps": "How this test narrows the differential",
+        "limitations": "What this test won't tell you"
+      }
+    ],
+    "strengthOfEvidence": "Overall quality of evidence for leading diagnosis"
+  },
+  "cognitiveDebiasing": {
+    "identifiedBiases": [
+      {
+        "bias": "Specific bias identified",
+        "evidence": "Why you think this bias is present",
+        "impact": "How it affects the differential"
+      }
+    ],
+    "debiasStrategies": [
+      "Specific strategies to reduce bias in this case"
+    ],
+    "prematureClosureRisk": "high/medium/low",
+    "recommendedPause": "Specific prompts to force reconsideration"
+  },
+  "recommendations": [
+    "Specific actionable recommendations for diagnostic approach"
+  ]
+}
+
+Return ONLY valid JSON.`;
+
+    console.log(`[${new Date().toISOString()}] Processing alternative diagnosis exploration...`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 5000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const explorationResult = JSON.parse(jsonMatch[0]);
+
+    console.log(`[${new Date().toISOString()}] Alternative diagnosis exploration complete`);
+
+    res.json({
+      success: true,
+      data: explorationResult,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Alternative diagnosis exploration error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Alternative diagnosis exploration failed.'
+    });
+  }
+});
+
+// Cognitive Bias Analysis endpoint
+app.post('/api/analyze-biases', async (req, res) => {
+  try {
+    const { clinicalReasoning, diagnosis, workup, management } = req.body;
+
+    if (!clinicalReasoning && !diagnosis) {
+      return res.status(400).json({
+        error: 'Clinical reasoning or diagnosis information required'
+      });
+    }
+
+    const biasPrompt = generateBiasDetectionPrompt();
+
+    const prompt = `You are NeuroLogic Clinical Decision Support AI specializing in metacognitive analysis of clinical reasoning.
+
+CLINICAL REASONING CHAIN:
+${clinicalReasoning || 'Not provided'}
+
+PROPOSED DIAGNOSIS:
+${diagnosis || 'Not provided'}
+
+DIAGNOSTIC WORKUP PLAN:
+${JSON.stringify(workup, null, 2) || 'Not provided'}
+
+MANAGEMENT PLAN:
+${JSON.stringify(management, null, 2) || 'Not provided'}
+
+${biasPrompt}
+
+Provide a detailed analysis in JSON format:
+{
+  "overallReasoning": {
+    "quality": "excellent/good/fair/poor",
+    "summary": "Brief summary of reasoning quality",
+    "logicalFlow": "Assessment of logical progression from data to conclusion"
+  },
+  "cognitiveBiases": [
+    {
+      "biasType": "Specific bias name",
+      "severity": "high/medium/low",
+      "evidence": "Specific evidence from the case",
+      "clinicalExample": "How it manifests in this case",
+      "potentialImpact": "How this could lead to diagnostic or therapeutic error",
+      "mitigationStrategies": [
+        "Specific action to take to mitigate this bias"
+      ],
+      "questionsToAsk": [
+        "Specific questions clinician should ask themselves"
+      ]
+    }
+  ],
+  "logicalFallacies": [
+    {
+      "fallacyType": "Specific fallacy name",
+      "description": "How it appears in this reasoning",
+      "problemWithReasoning": "Why this is problematic",
+      "correction": "How to correct the logical error",
+      "alternativeReasoning": "Better logical approach"
+    }
+  ],
+  "reasoningStrengths": [
+    {
+      "aspect": "What was done well",
+      "example": "Specific example from the case"
+    }
+  ],
+  "reasoningWeaknesses": [
+    {
+      "aspect": "What could be improved",
+      "risk": "Potential risk this creates",
+      "improvement": "How to improve"
+    }
+  ],
+  "diagnosticErrors": {
+    "noFaultErrors": ["Errors unavoidable due to disease presentation"],
+    "systemErrors": ["Errors due to system issues"],
+    "cognitiveErrors": ["Errors due to reasoning or bias"],
+    "preventableErrors": ["Errors that could be prevented"]
+  },
+  "uncertaintyAssessment": {
+    "acknowledgedUncertainties": ["Uncertainties appropriately recognized"],
+    "unacknowledgedUncertainties": ["Uncertainties not addressed"],
+    "recommendation": "How to better handle uncertainty"
+  },
+  "improvementRecommendations": [
+    {
+      "recommendation": "Specific recommendation",
+      "rationale": "Why this would improve reasoning",
+      "implementation": "How to implement"
+    }
+  ],
+  "metacognitivePrompts": [
+    "Question 1: Challenge your assumptions",
+    "Question 2: Consider alternatives",
+    "Question 3: What could you be missing?"
+  ]
+}
+
+Return ONLY valid JSON.`;
+
+    console.log(`[${new Date().toISOString()}] Processing cognitive bias analysis...`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const biasAnalysis = JSON.parse(jsonMatch[0]);
+
+    console.log(`[${new Date().toISOString()}] Cognitive bias analysis complete`);
+
+    res.json({
+      success: true,
+      data: biasAnalysis,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Cognitive bias analysis error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Cognitive bias analysis failed.'
+    });
+  }
+});
+
+// Get cognitive biases and logical fallacies reference
+app.get('/api/biases-fallacies-reference', (req, res) => {
+  try {
+    const reference = getAllBiasesAndFallacies();
+    res.json({
+      success: true,
+      data: reference,
+      description: 'Reference guide for cognitive biases and logical fallacies in clinical medicine'
+    });
+  } catch (error) {
+    console.error('Reference retrieval error:', error);
+    res.status(500).json({ error: 'Failed to retrieve reference' });
   }
 });
 

@@ -54,6 +54,27 @@ NeuroLogic transforms clinical dictation into structured medical notes with inte
 - **Evidence-Based Guidelines** - Quick access to IDSA, ACC/AHA, GOLD, AHA/ASA guidelines
 - **AI-Enhanced Decision Support** - Comprehensive clinical reasoning with automated safety checks
 
+### 🧩 Cognitive Bias Detection & Alternative Diagnosis (NEW!)
+- **Cognitive Bias Detection** - Identifies 12+ common clinical cognitive biases including:
+  - Anchoring Bias, Confirmation Bias, Availability Bias
+  - Premature Closure, Search Satisficing, Framing Effect
+  - Diagnosis Momentum, Omission/Commission Bias, and more
+- **Logical Fallacy Analysis** - Detects reasoning errors like:
+  - Post Hoc Ergo Propter Hoc, False Equivalence, Circular Reasoning
+  - Hasty Generalization, False Choice, Appeal to Authority
+- **Alternative Diagnosis Exploration** - Systematic metacognitive analysis:
+  - Challenge leading diagnosis with contradictory evidence
+  - Must-not-miss diagnosis identification
+  - Atypical presentation consideration
+  - VINDICATE-based systematic differential generation
+- **Reasoning Quality Assessment** - Evaluates clinical reasoning with:
+  - Strengths and weaknesses identification
+  - Uncertainty quantification
+  - Cognitive debiasing strategies
+  - Metacognitive prompts for improved decision-making
+
+**See [COGNITIVE_BIAS_FEATURES.md](COGNITIVE_BIAS_FEATURES.md) for detailed documentation and API reference.**
+
 ## 🚀 Quick Start
 
 ### Prerequisites
