@@ -2263,3 +2263,17 @@ body {
   border-color: rgba(251, 146, 60, 0.3);
   color: #fdba74;
 }
+.emr-wrapper {
+  padding: 0;
+  margin: 0;
+}
+
+.emr-wrapper .emr-container {
+  background: transparent;
+  padding: 0;
+}
+
+.emr-wrapper .emr-content {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}

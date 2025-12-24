@@ -20,6 +20,30 @@ import {
   validateHIPAACompliance,
   generateAuditLog
 } from './phiProtection.js';
+import {
+  createPatient,
+  getPatient,
+  updatePatient,
+  searchPatients,
+  getAllPatients,
+  createVisit,
+  getVisitHistory,
+  addHealthMetric,
+  getHealthMetrics,
+  getHealthTrends,
+  createCarePlan,
+  getCarePlans,
+  updateCarePlan,
+  addProblem,
+  updateProblem,
+  addMedication,
+  updateMedication
+} from './emrManagement.js';
+import {
+  analyzeHealthTrends,
+  generateConservativeManagement,
+  generateOptimizationPlan
+} from './healthAnalytics.js';
 
 dotenv.config();
 
@@ -1765,6 +1789,630 @@ IMPORTANT:
     res.status(500).json({
       error: error.message || 'Medical imaging analysis failed. Please try again.'
     });
+  }
+});
+
+// ==================== EMR (Electronic Medical Record) Endpoints ====================
+
+// Helper functions
+function calculateAge(dateOfBirth) {
+  const today = new Date();
+  const birthDate = new Date(dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+
+  return age;
+}
+
+function formatMetricsForPrompt(metrics) {
+  if (metrics.length === 0) return 'No recent metrics available';
+
+  return metrics.map(m => {
+    const date = new Date(m.timestamp).toLocaleDateString();
+    return `- ${date}: ${m.category} = ${m.value} ${m.unit}`;
+  }).join('\n');
+}
+
+// Patient Management Endpoints
+
+// Create new patient
+app.post('/api/emr/patients', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const patient = createPatient(req.body);
+    res.json({
+      success: true,
+      patient,
+      message: 'Patient created successfully'
+    });
+  } catch (error) {
+    console.error('Create patient error:', error);
+    res.status(500).json({ error: error.message || 'Failed to create patient' });
+  }
+});
+
+// Get all patients (with pagination)
+app.get('/api/emr/patients', (req, res) => {
+  try {
+    const { limit, offset, sortBy } = req.query;
+    const patients = getAllPatients({
+      limit: parseInt(limit) || 50,
+      offset: parseInt(offset) || 0,
+      sortBy: sortBy || 'lastName'
+    });
+
+    res.json({
+      success: true,
+      patients,
+      count: patients.length
+    });
+  } catch (error) {
+    console.error('Get patients error:', error);
+    res.status(500).json({ error: error.message || 'Failed to retrieve patients' });
+  }
+});
+
+// Search patients
+app.get('/api/emr/patients/search', (req, res) => {
+  try {
+    const { q } = req.query;
+
+    if (!q) {
+      return res.status(400).json({ error: 'Search query required' });
+    }
+
+    const results = searchPatients(q);
+
+    res.json({
+      success: true,
+      results,
+      count: results.length
+    });
+  } catch (error) {
+    console.error('Search patients error:', error);
+    res.status(500).json({ error: error.message || 'Search failed' });
+  }
+});
+
+// Get specific patient
+app.get('/api/emr/patients/:patientId', (req, res) => {
+  try {
+    const patient = getPatient(req.params.patientId);
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    res.json({
+      success: true,
+      patient
+    });
+  } catch (error) {
+    console.error('Get patient error:', error);
+    res.status(500).json({ error: error.message || 'Failed to retrieve patient' });
+  }
+});
+
+// Update patient
+app.put('/api/emr/patients/:patientId', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const patient = updatePatient(req.params.patientId, req.body);
+    res.json({
+      success: true,
+      patient,
+      message: 'Patient updated successfully'
+    });
+  } catch (error) {
+    console.error('Update patient error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update patient' });
+  }
+});
+
+// Visit Management Endpoints
+
+// Create visit for patient
+app.post('/api/emr/patients/:patientId/visits', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const visit = createVisit({
+      ...req.body,
+      patientId: req.params.patientId
+    });
+
+    res.json({
+      success: true,
+      visit,
+      message: 'Visit created successfully'
+    });
+  } catch (error) {
+    console.error('Create visit error:', error);
+    res.status(500).json({ error: error.message || 'Failed to create visit' });
+  }
+});
+
+// Get visit history for patient
+app.get('/api/emr/patients/:patientId/visits', (req, res) => {
+  try {
+    const { limit, startDate, endDate } = req.query;
+
+    const visits = getVisitHistory(req.params.patientId, {
+      limit: parseInt(limit) || 10,
+      startDate,
+      endDate
+    });
+
+    res.json({
+      success: true,
+      visits,
+      count: visits.length
+    });
+  } catch (error) {
+    console.error('Get visits error:', error);
+    res.status(500).json({ error: error.message || 'Failed to retrieve visits' });
+  }
+});
+
+// Health Metrics Endpoints
+
+// Add health metric for patient
+app.post('/api/emr/patients/:patientId/metrics', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const metric = addHealthMetric({
+      ...req.body,
+      patientId: req.params.patientId
+    });
+
+    res.json({
+      success: true,
+      metric,
+      message: 'Health metric added successfully'
+    });
+  } catch (error) {
+    console.error('Add metric error:', error);
+    res.status(500).json({ error: error.message || 'Failed to add health metric' });
+  }
+});
+
+// Get health metrics for patient
+app.get('/api/emr/patients/:patientId/metrics', (req, res) => {
+  try {
+    const { type, category, startDate, endDate, limit } = req.query;
+
+    const metrics = getHealthMetrics(req.params.patientId, {
+      type,
+      category,
+      startDate,
+      endDate,
+      limit: parseInt(limit) || undefined
+    });
+
+    res.json({
+      success: true,
+      metrics,
+      count: metrics.length
+    });
+  } catch (error) {
+    console.error('Get metrics error:', error);
+    res.status(500).json({ error: error.message || 'Failed to retrieve metrics' });
+  }
+});
+
+// Get health trends for specific metric
+app.get('/api/emr/patients/:patientId/trends/:metric', (req, res) => {
+  try {
+    const { timeframe } = req.query;
+
+    const trends = getHealthTrends(
+      req.params.patientId,
+      req.params.metric,
+      timeframe || '3m'
+    );
+
+    res.json({
+      success: true,
+      trends
+    });
+  } catch (error) {
+    console.error('Get trends error:', error);
+    res.status(500).json({ error: error.message || 'Failed to retrieve trends' });
+  }
+});
+
+// AI Health Analytics Endpoints
+
+// Generate comprehensive health analysis for patient
+app.post('/api/emr/patients/:patientId/analyze', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const patient = getPatient(req.params.patientId);
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // Get recent health metrics
+    const recentMetrics = getHealthMetrics(req.params.patientId, { limit: 100 });
+
+    // Perform health analysis
+    const healthAnalysis = analyzeHealthTrends(patient, recentMetrics);
+
+    // Generate conservative management recommendations
+    const conservativeManagement = generateConservativeManagement(patient, healthAnalysis);
+
+    // Generate optimization plan
+    const optimizationPlan = generateOptimizationPlan(
+      patient,
+      healthAnalysis,
+      conservativeManagement
+    );
+
+    res.json({
+      success: true,
+      data: {
+        patient: {
+          id: patient.id,
+          name: `${patient.demographics.firstName} ${patient.demographics.lastName}`,
+          age: calculateAge(patient.demographics.dateOfBirth)
+        },
+        healthAnalysis,
+        conservativeManagement,
+        optimizationPlan
+      }
+    });
+  } catch (error) {
+    console.error('Health analysis error:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate health analysis' });
+  }
+});
+
+// AI-Powered Personalized Health Insights (using Claude)
+app.post('/api/emr/patients/:patientId/insights', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const patient = getPatient(req.params.patientId);
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // Get comprehensive patient data
+    const recentMetrics = getHealthMetrics(req.params.patientId, { limit: 50 });
+    const recentVisits = getVisitHistory(req.params.patientId, { limit: 5 });
+    const activePlans = getCarePlans(req.params.patientId, { status: 'active' });
+
+    // Build comprehensive prompt
+    const age = calculateAge(patient.demographics.dateOfBirth);
+
+    const prompt = `You are a concierge primary care physician's AI assistant specializing in personalized health optimization and conservative management approaches.
+
+PATIENT INFORMATION:
+Age: ${age}
+Gender: ${patient.demographics.gender}
+
+MEDICAL HISTORY:
+Problems: ${patient.medicalHistory.problemList.map(p => p.name).join(', ') || 'None documented'}
+Medications: ${patient.medicalHistory.medications.filter(m => m.status === 'active').map(m => `${m.name} ${m.dosage}`).join(', ') || 'None'}
+Allergies: ${patient.medicalHistory.allergies.join(', ') || 'None'}
+
+RECENT HEALTH METRICS:
+${formatMetricsForPrompt(recentMetrics.slice(0, 20))}
+
+PATIENT GOALS:
+${patient.preferences.goals.join(', ') || 'Not specified'}
+
+ACTIVE CARE PLANS:
+${activePlans.map(p => `- ${p.title}: ${p.category}`).join('\n') || 'None'}
+
+RECENT VISITS:
+${recentVisits.map(v => `${new Date(v.visitDate).toLocaleDateString()} - ${v.visitType}: ${v.chiefComplaint}`).join('\n') || 'No recent visits'}
+
+Generate personalized health insights and recommendations focused on conservative management and lifestyle optimization. Provide a comprehensive JSON response:
+
+{
+  "healthSummary": {
+    "overallStatus": "Brief overall health status assessment",
+    "keyStrengths": ["Positive health aspects to maintain"],
+    "areasForImprovement": ["Areas where patient can improve"]
+  },
+  "personalizedRecommendations": {
+    "lifestyle": [
+      {
+        "category": "Sleep/Exercise/Stress/Work-Life Balance/etc.",
+        "recommendation": "Specific, actionable recommendation",
+        "rationale": "Why this is important for this patient",
+        "implementation": "Practical steps to implement",
+        "priority": "high/medium/low",
+        "timeline": "When to start and expected duration"
+      }
+    ],
+    "nutrition": [
+      {
+        "recommendation": "Specific dietary recommendation",
+        "rationale": "Evidence-based reasoning",
+        "practicalTips": ["Practical tips for implementation"],
+        "priority": "high/medium/low"
+      }
+    ],
+    "exercise": [
+      {
+        "recommendation": "Specific exercise recommendation",
+        "rationale": "Why this type of exercise",
+        "frequency": "How often",
+        "duration": "How long",
+        "intensity": "Intensity level",
+        "modifications": ["Any modifications based on patient conditions"],
+        "priority": "high/medium/low"
+      }
+    ],
+    "stressManagement": [
+      {
+        "technique": "Stress management technique",
+        "benefits": "Expected benefits",
+        "howTo": "How to practice",
+        "frequency": "Recommended frequency"
+      }
+    ],
+    "sleep": [
+      {
+        "recommendation": "Sleep optimization recommendation",
+        "rationale": "Why this matters",
+        "implementation": "How to implement"
+      }
+    ],
+    "supplements": [
+      {
+        "supplement": "Supplement name",
+        "dosage": "Recommended dosage",
+        "rationale": "Evidence-based rationale",
+        "considerations": "Safety considerations or interactions",
+        "priority": "high/medium/low"
+      }
+    ]
+  },
+  "preventiveCare": {
+    "screeningsDue": [
+      {
+        "screening": "Screening test name",
+        "ageAppropriate": true/false,
+        "guidelineSource": "USPSTF/ACS/etc.",
+        "frequency": "How often",
+        "nextDue": "When next due"
+      }
+    ],
+    "immunizationsNeeded": [
+      {
+        "vaccine": "Vaccine name",
+        "indication": "Why recommended",
+        "timing": "When to get"
+      }
+    ]
+  },
+  "goalSetting": {
+    "shortTerm": [
+      {
+        "goal": "30-90 day goal",
+        "measurable": "How to measure success",
+        "actionSteps": ["Specific steps to achieve"],
+        "barriers": ["Potential barriers"],
+        "support": ["Support needed"]
+      }
+    ],
+    "longTerm": [
+      {
+        "goal": "6-12 month goal",
+        "measurable": "Success criteria",
+        "milestones": ["Interim milestones"]
+      }
+    ]
+  },
+  "monitoringPlan": {
+    "metricsToTrack": [
+      {
+        "metric": "What to track",
+        "frequency": "How often",
+        "target": "Target value or range",
+        "method": "How to measure"
+      }
+    ],
+    "followUpRecommendations": [
+      {
+        "timeframe": "When",
+        "purpose": "Why",
+        "assessments": ["What to assess"]
+      }
+    ]
+  },
+  "redFlags": [
+    {
+      "symptom": "Symptom or change to watch for",
+      "significance": "Why this is concerning",
+      "action": "What to do if this occurs"
+    }
+  ]
+}
+
+IMPORTANT:
+- Focus on evidence-based, conservative management approaches
+- Prioritize lifestyle interventions before medications
+- Make recommendations specific and actionable
+- Consider patient's stated goals
+- Be realistic and sustainable
+- Return ONLY valid JSON`;
+
+    console.log(`[${new Date().toISOString()}] Generating AI health insights for patient ${req.params.patientId}...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 5000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const insights = JSON.parse(jsonMatch[0]);
+
+    console.log(`[${new Date().toISOString()}] AI health insights generated successfully`);
+
+    res.json({
+      success: true,
+      data: insights,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('AI insights error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Failed to generate AI insights'
+    });
+  }
+});
+
+// Care Plan Management Endpoints
+
+// Create care plan for patient
+app.post('/api/emr/patients/:patientId/care-plans', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const carePlan = createCarePlan({
+      ...req.body,
+      patientId: req.params.patientId
+    });
+
+    res.json({
+      success: true,
+      carePlan,
+      message: 'Care plan created successfully'
+    });
+  } catch (error) {
+    console.error('Create care plan error:', error);
+    res.status(500).json({ error: error.message || 'Failed to create care plan' });
+  }
+});
+
+// Get care plans for patient
+app.get('/api/emr/patients/:patientId/care-plans', (req, res) => {
+  try {
+    const { status } = req.query;
+
+    const carePlans = getCarePlans(req.params.patientId, { status });
+
+    res.json({
+      success: true,
+      carePlans,
+      count: carePlans.length
+    });
+  } catch (error) {
+    console.error('Get care plans error:', error);
+    res.status(500).json({ error: error.message || 'Failed to retrieve care plans' });
+  }
+});
+
+// Update care plan
+app.put('/api/emr/patients/:patientId/care-plans/:planId', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const carePlan = updateCarePlan(req.params.patientId, req.params.planId, req.body);
+
+    res.json({
+      success: true,
+      carePlan,
+      message: 'Care plan updated successfully'
+    });
+  } catch (error) {
+    console.error('Update care plan error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update care plan' });
+  }
+});
+
+// Problem List Management Endpoints
+
+// Add problem to patient problem list
+app.post('/api/emr/patients/:patientId/problems', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const problem = addProblem(req.params.patientId, req.body);
+
+    res.json({
+      success: true,
+      problem,
+      message: 'Problem added successfully'
+    });
+  } catch (error) {
+    console.error('Add problem error:', error);
+    res.status(500).json({ error: error.message || 'Failed to add problem' });
+  }
+});
+
+// Update problem
+app.put('/api/emr/patients/:patientId/problems/:problemId', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const problem = updateProblem(req.params.patientId, req.params.problemId, req.body);
+
+    res.json({
+      success: true,
+      problem,
+      message: 'Problem updated successfully'
+    });
+  } catch (error) {
+    console.error('Update problem error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update problem' });
+  }
+});
+
+// Medication Management Endpoints
+
+// Add medication to patient medication list
+app.post('/api/emr/patients/:patientId/medications', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const medication = addMedication(req.params.patientId, req.body);
+
+    res.json({
+      success: true,
+      medication,
+      message: 'Medication added successfully'
+    });
+  } catch (error) {
+    console.error('Add medication error:', error);
+    res.status(500).json({ error: error.message || 'Failed to add medication' });
+  }
+});
+
+// Update medication
+app.put('/api/emr/patients/:patientId/medications/:medicationId', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const medication = updateMedication(req.params.patientId, req.params.medicationId, req.body);
+
+    res.json({
+      success: true,
+      medication,
+      message: 'Medication updated successfully'
+    });
+  } catch (error) {
+    console.error('Update medication error:', error);
+    res.status(500).json({ error: error.message || 'Failed to update medication' });
   }
 });
 
