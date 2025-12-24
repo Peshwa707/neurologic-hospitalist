@@ -1163,17 +1163,28 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
+// Listen on 0.0.0.0 for Railway/Docker compatibility
+const HOST = process.env.HOST || '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║           NeuroLogic Hospitalist Assistant                 ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Status:  Running                                          ║
+║  Host:    ${HOST}                                              ║
 ║  Port:    ${PORT}                                              ║
 ║  Mode:    ${process.env.NODE_ENV || 'development'}                                     ║
 ║  API:     ${process.env.ANTHROPIC_API_KEY ? 'Configured ✓' : 'Missing ✗'}                                   ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
+
+  // Log warning if API key is missing
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn('\n⚠️  WARNING: ANTHROPIC_API_KEY is not set!');
+    console.warn('   The application will not work without this environment variable.');
+    console.warn('   Please set it in your Railway dashboard: Variables tab\n');
+  }
 });
 
 export default app;
