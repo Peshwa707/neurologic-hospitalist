@@ -351,7 +351,7 @@ function getAllBiasesAndFallacies() {
   };
 }
 
-module.exports = {
+export {
   cognitiveBiases,
   logicalFallacies,
   generateBiasDetectionPrompt,
