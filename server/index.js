@@ -15,6 +15,11 @@ import {
   generateAlternativeDiagnosisPrompt,
   getAllBiasesAndFallacies
 } from './cognitiveBiasDetector.js';
+import {
+  protectPHI,
+  validateHIPAACompliance,
+  generateAuditLog
+} from './phiProtection.js';
 
 dotenv.config();
 
@@ -29,6 +34,18 @@ let runtimeConfig = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null
 };
 
+// HIPAA Compliance Configuration
+let hipaaConfig = {
+  phiRedactionEnabled: process.env.PHI_REDACTION_ENABLED !== 'false', // Default: enabled
+  baaAcknowledged: process.env.ANTHROPIC_BAA_ACKNOWLEDGED === 'true',
+  httpsEnforced: process.env.NODE_ENV === 'production',
+  auditLoggingEnabled: process.env.AUDIT_LOGGING_ENABLED === 'true',
+  accessControlsEnabled: false, // TODO: Implement access controls
+  encryptionAtRest: false, // TODO: Implement encryption at rest
+  dataRetentionPolicy: process.env.DATA_RETENTION_DAYS || null,
+  requireUserConsent: process.env.REQUIRE_PHI_CONSENT !== 'false' // Default: required
+};
+
 // Initialize Anthropic client with runtime config support
 function getAnthropicClient() {
   if (!runtimeConfig.anthropicApiKey) {
@@ -37,6 +54,45 @@ function getAnthropicClient() {
   return new Anthropic({
     apiKey: runtimeConfig.anthropicApiKey,
   });
+}
+
+// PHI Protection Middleware
+function phiProtectionMiddleware(req, res, next) {
+  // Store original request body for audit logging
+  req.originalBody = { ...req.body };
+
+  // Apply PHI redaction if enabled
+  if (hipaaConfig.phiRedactionEnabled && req.body) {
+    try {
+      const protectionResult = protectPHI(req.body, {
+        endpoint: req.path,
+        auditContext: {
+          ipAddress: req.ip || req.connection.remoteAddress,
+          userAgent: req.get('user-agent'),
+          sessionId: req.session?.id || 'no-session'
+        }
+      });
+
+      // Replace request body with protected version
+      req.body = protectionResult.protected;
+
+      // Store PHI warnings in request for logging
+      req.phiWarnings = protectionResult.warnings;
+
+      // Store audit log
+      req.phiAuditLog = protectionResult.auditLog;
+
+      // Log warnings
+      if (protectionResult.warnings.length > 0) {
+        console.log('[PHI Protection]', protectionResult.warnings.join('; '));
+      }
+    } catch (error) {
+      console.error('[PHI Protection] Error applying PHI protection:', error);
+      // Continue without blocking the request, but log the error
+    }
+  }
+
+  next();
 }
 
 // Middleware
@@ -54,8 +110,62 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     service: 'NeuroLogic Hospitalist Assistant',
     timestamp: new Date().toISOString(),
-    apiKeyConfigured: !!runtimeConfig.anthropicApiKey
+    apiKeyConfigured: !!runtimeConfig.anthropicApiKey,
+    phiProtectionEnabled: hipaaConfig.phiRedactionEnabled
   });
+});
+
+// HIPAA Compliance Status endpoint
+app.get('/api/hipaa/status', (req, res) => {
+  const complianceCheck = validateHIPAACompliance(hipaaConfig);
+
+  res.json({
+    success: true,
+    phiRedactionEnabled: hipaaConfig.phiRedactionEnabled,
+    baaRequired: true,
+    baaAcknowledged: hipaaConfig.baaAcknowledged,
+    complianceStatus: complianceCheck.compliant ? 'compliant' : 'non-compliant',
+    issues: complianceCheck.issues,
+    warnings: complianceCheck.warnings,
+    recommendation: complianceCheck.recommendation,
+    notice: 'This application processes Protected Health Information (PHI). A Business Associate Agreement (BAA) with Anthropic is required for HIPAA compliance when using their API with PHI.'
+  });
+});
+
+// User consent acknowledgment endpoint
+app.post('/api/hipaa/acknowledge-consent', (req, res) => {
+  try {
+    const { consentAcknowledged, userIdentifier } = req.body;
+
+    if (!consentAcknowledged) {
+      return res.status(400).json({
+        success: false,
+        error: 'User consent acknowledgment required'
+      });
+    }
+
+    // Log consent (in production, store this in database with timestamp)
+    const auditLog = generateAuditLog({
+      action: 'PHI_CONSENT_ACKNOWLEDGED',
+      userId: userIdentifier || 'anonymous',
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent')
+    });
+
+    console.log('[HIPAA Consent]', JSON.stringify(auditLog));
+
+    res.json({
+      success: true,
+      message: 'Consent acknowledged',
+      timestamp: auditLog.timestamp
+    });
+  } catch (error) {
+    console.error('Consent acknowledgment error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process consent acknowledgment'
+    });
+  }
 });
 
 // Configuration endpoints
@@ -115,7 +225,7 @@ app.post('/api/config/api-key', (req, res) => {
 });
 
 // Main analysis endpoint
-app.post('/api/analyze', async (req, res) => {
+app.post('/api/analyze', phiProtectionMiddleware, async (req, res) => {
   try {
     const { transcript, clinicalContext, noteType } = req.body;
 
@@ -260,7 +370,7 @@ ${transcript || 'No dictation provided'}`;
 });
 
 // Care Progression endpoint - detailed next steps analysis
-app.post('/api/care-progression', async (req, res) => {
+app.post('/api/care-progression', phiProtectionMiddleware, async (req, res) => {
   try {
     const { clinicalContext, currentProblems, hospitalDay } = req.body;
 
@@ -334,7 +444,7 @@ Return ONLY valid JSON.`
 });
 
 // Discharge Readiness Assessment endpoint
-app.post('/api/discharge-readiness', async (req, res) => {
+app.post('/api/discharge-readiness', phiProtectionMiddleware, async (req, res) => {
   try {
     const { clinicalContext, vitalsTrend, labsTrend, functionalStatus, socialSituation } = req.body;
 
@@ -445,7 +555,7 @@ Return ONLY valid JSON.`
 });
 
 // Transcription enhancement endpoint (optional - for improving raw transcripts)
-app.post('/api/enhance-transcript', async (req, res) => {
+app.post('/api/enhance-transcript', phiProtectionMiddleware, async (req, res) => {
   try {
     const { rawTranscript } = req.body;
 
@@ -661,7 +771,7 @@ app.get('/api/guidelines', (req, res) => {
 });
 
 // AI-Enhanced Clinical Decision Support endpoint
-app.post('/api/clinical-decision-support', async (req, res) => {
+app.post('/api/clinical-decision-support', phiProtectionMiddleware, async (req, res) => {
   try {
     const {
       clinicalScenario,
@@ -889,7 +999,7 @@ Return ONLY valid JSON.`;
 });
 
 // Alternative Diagnosis Exploration endpoint
-app.post('/api/explore-alternatives', async (req, res) => {
+app.post('/api/explore-alternatives', phiProtectionMiddleware, async (req, res) => {
   try {
     const { clinicalScenario, currentDifferential, patientData } = req.body;
 
@@ -1059,7 +1169,7 @@ Return ONLY valid JSON.`;
 });
 
 // Cognitive Bias Analysis endpoint
-app.post('/api/analyze-biases', async (req, res) => {
+app.post('/api/analyze-biases', phiProtectionMiddleware, async (req, res) => {
   try {
     const { clinicalReasoning, diagnosis, workup, management } = req.body;
 
@@ -1230,7 +1340,7 @@ app.get('/api/biases-fallacies-reference', (req, res) => {
 // ==================== Medical Image Analysis Endpoints ====================
 
 // EKG Analysis endpoint
-app.post('/api/analyze-ekg', async (req, res) => {
+app.post('/api/analyze-ekg', phiProtectionMiddleware, async (req, res) => {
   try {
     const { image, clinicalContext, patientData } = req.body;
 
@@ -1432,7 +1542,7 @@ IMPORTANT:
 });
 
 // Medical Imaging Analysis endpoint (X-ray, CT, MRI, etc.)
-app.post('/api/analyze-imaging', async (req, res) => {
+app.post('/api/analyze-imaging', phiProtectionMiddleware, async (req, res) => {
   try {
     const { image, imagingType, clinicalContext, patientData, clinicalQuestion } = req.body;
 

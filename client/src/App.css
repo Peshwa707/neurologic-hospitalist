@@ -2001,3 +2001,265 @@ body {
     transform: scale(0.8);
   }
 }
+
+/* ==================== HIPAA Compliance Modal Styles ==================== */
+
+.hipaa-modal-overlay {
+  z-index: 10000 !important;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.hipaa-modal {
+  max-width: 700px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 2px solid #ef4444;
+  box-shadow: 0 20px 60px rgba(239, 68, 68, 0.4);
+}
+
+.hipaa-header {
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+  border-bottom: 2px solid #fca5a5;
+  padding: 20px 24px;
+}
+
+.hipaa-header h2 {
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.hipaa-body {
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.05) 0%, rgba(0, 0, 0, 0.3) 100%);
+}
+
+.hipaa-warning {
+  text-align: center;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.hipaa-warning svg {
+  margin-bottom: 12px;
+}
+
+.hipaa-warning h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fca5a5;
+  margin: 0;
+}
+
+.hipaa-content {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.hipaa-intro {
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border-left: 3px solid #ef4444;
+}
+
+.hipaa-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border-left: 3px solid rgba(102, 126, 234, 0.5);
+}
+
+.hipaa-section h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hipaa-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.hipaa-section li {
+  font-size: 14px;
+  line-height: 1.7;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hipaa-section li strong {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.hipaa-section a {
+  color: #60a5fa;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.hipaa-section a:hover {
+  border-bottom-color: #60a5fa;
+}
+
+.hipaa-critical {
+  background: rgba(239, 68, 68, 0.15);
+  border-left-color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.hipaa-warnings {
+  background: rgba(251, 146, 60, 0.1);
+  border-left-color: #f97316;
+}
+
+.hipaa-disclaimer {
+  margin-top: 24px;
+  padding: 16px;
+  background: rgba(249, 115, 22, 0.15);
+  border-radius: 6px;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.hipaa-footer {
+  padding: 20px 24px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hipaa-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s;
+}
+
+.hipaa-checkbox-label:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.hipaa-checkbox {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #ef4444;
+}
+
+.hipaa-checkbox-label span {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.hipaa-checkbox-label span strong {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.hipaa-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hipaa-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+}
+
+.hipaa-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* HIPAA Modal Responsive */
+@media (max-width: 768px) {
+  .hipaa-modal {
+    max-width: 95%;
+    max-height: 95vh;
+    margin: 10px;
+  }
+
+  .hipaa-body {
+    padding: 16px;
+  }
+
+  .hipaa-section {
+    padding: 12px;
+  }
+
+  .hipaa-footer {
+    padding: 16px;
+  }
+
+  .hipaa-checkbox-label {
+    padding: 12px;
+  }
+}
+
+/* PHI Protection Indicator in Header */
+.phi-protection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #86efac;
+  font-weight: 500;
+}
+
+.phi-protection-indicator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.phi-protection-indicator.warning {
+  background: rgba(251, 146, 60, 0.15);
+  border-color: rgba(251, 146, 60, 0.3);
+  color: #fdba74;
+}
