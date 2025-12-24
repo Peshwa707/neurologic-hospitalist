@@ -1227,6 +1227,437 @@ app.get('/api/biases-fallacies-reference', (req, res) => {
   }
 });
 
+// ==================== Medical Image Analysis Endpoints ====================
+
+// EKG Analysis endpoint
+app.post('/api/analyze-ekg', async (req, res) => {
+  try {
+    const { image, clinicalContext, patientData } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ error: 'EKG image is required' });
+    }
+
+    // Extract base64 data and media type
+    let imageData = image;
+    let mediaType = 'image/jpeg';
+
+    if (image.includes('base64,')) {
+      const parts = image.split('base64,');
+      imageData = parts[1];
+      // Extract media type from data URL
+      const match = parts[0].match(/data:([^;]+)/);
+      if (match) mediaType = match[1];
+    }
+
+    const prompt = `You are NeuroLogic Clinical Decision Support AI specializing in EKG interpretation. Analyze this 12-lead EKG and provide a comprehensive interpretation.
+
+PATIENT CLINICAL CONTEXT:
+${clinicalContext || 'Not provided'}
+
+PATIENT DATA:
+${JSON.stringify(patientData, null, 2) || 'Not provided'}
+
+Provide a detailed EKG interpretation in JSON format:
+{
+  "technicalQuality": {
+    "quality": "excellent/good/fair/poor/uninterpretable",
+    "issues": ["Any technical issues affecting interpretation"],
+    "calibration": "Standard 10mm/mV and 25mm/sec or specify if different"
+  },
+  "rate": {
+    "atrial": "beats per minute or description",
+    "ventricular": "beats per minute",
+    "interpretation": "Normal (60-100) / Bradycardia / Tachycardia"
+  },
+  "rhythm": {
+    "description": "Sinus rhythm / Atrial fibrillation / etc.",
+    "regularity": "Regular / Regularly irregular / Irregularly irregular",
+    "pWaves": "Present, absent, or abnormal morphology",
+    "prInterval": "Normal (120-200ms) / Short / Prolonged / Variable",
+    "qrsComplex": "Narrow (<120ms) / Wide (>120ms)",
+    "qtInterval": "Normal / Prolonged / Shortened",
+    "qtcCalculated": "QTc in milliseconds if measurable"
+  },
+  "axis": {
+    "frontalPlane": "Normal / Left axis deviation / Right axis deviation / Extreme axis",
+    "degrees": "Approximate axis in degrees if determinable"
+  },
+  "intervals": {
+    "pr": "Duration and interpretation",
+    "qrs": "Duration and interpretation",
+    "qt": "Duration",
+    "qtc": "Corrected QT and interpretation"
+  },
+  "morphology": {
+    "pWaves": "Normal / Peaked / Notched / Absent / Abnormal",
+    "qrsComplex": "Normal / Pathologic Q waves / Poor R wave progression / Other",
+    "stSegments": "Normal / Elevated / Depressed",
+    "tWaves": "Normal / Inverted / Peaked / Flattened / Biphasic"
+  },
+  "findings": [
+    {
+      "category": "Normal Finding / Arrhythmia / Ischemia / Infarction / Hypertrophy / Conduction / Electrolyte / Other",
+      "finding": "Specific finding",
+      "severity": "Normal / Mild / Moderate / Severe / Critical",
+      "leads": ["Leads where finding is present"],
+      "clinicalSignificance": "Clinical importance of this finding",
+      "acuity": "Acute / Chronic / Acute-on-chronic / Cannot determine"
+    }
+  ],
+  "interpretation": {
+    "primary": "Primary interpretation",
+    "additional": ["Additional interpretations"],
+    "comparison": "Comparison to prior EKGs if mentioned in clinical context",
+    "clinicalCorrelation": "How EKG findings correlate with clinical presentation"
+  },
+  "acuteChanges": {
+    "present": true/false,
+    "stemi": {
+      "present": true/false,
+      "territory": "Anterior / Inferior / Lateral / Posterior / None",
+      "leads": ["Leads with ST elevation"],
+      "criteria": "Meets STEMI criteria: Yes/No with explanation"
+    },
+    "nstemi": {
+      "possible": true/false,
+      "findings": ["Findings suggestive of NSTEMI"]
+    },
+    "ischemia": {
+      "present": true/false,
+      "location": "Location of ischemic changes"
+    }
+  },
+  "urgency": {
+    "level": "Critical - immediate action / Urgent - prompt evaluation / Routine / Non-urgent",
+    "reasoning": "Why this urgency level",
+    "timeframe": "Immediate / Within 1 hour / Within 24 hours / Routine"
+  },
+  "recommendations": [
+    {
+      "action": "Specific recommendation",
+      "priority": "Immediate / Urgent / Routine",
+      "rationale": "Why this is recommended"
+    }
+  ],
+  "differentialDiagnosis": [
+    {
+      "condition": "Possible cardiac condition",
+      "likelihood": "high/medium/low",
+      "supportingFindings": ["EKG findings supporting this"],
+      "additionalWorkup": ["Tests to confirm or rule out"]
+    }
+  ],
+  "criticalAlerts": [
+    {
+      "alert": "Critical finding requiring immediate attention",
+      "action": "Required immediate action"
+    }
+  ]
+}
+
+IMPORTANT:
+- Be systematic: rate, rhythm, axis, intervals, morphology, interpretation
+- Note any STEMI criteria or acute changes
+- Identify life-threatening findings
+- Consider clinical context when interpreting findings
+- Acknowledge limitations if image quality is poor
+- Return ONLY valid JSON`;
+
+    console.log(`[${new Date().toISOString()}] Processing EKG analysis...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType,
+                data: imageData
+              }
+            },
+            {
+              type: 'text',
+              text: prompt
+            }
+          ]
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const ekgAnalysis = JSON.parse(jsonMatch[0]);
+
+    console.log(`[${new Date().toISOString()}] EKG analysis complete`);
+
+    res.json({
+      success: true,
+      data: ekgAnalysis,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('EKG analysis error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'EKG analysis failed. Please try again.'
+    });
+  }
+});
+
+// Medical Imaging Analysis endpoint (X-ray, CT, MRI, etc.)
+app.post('/api/analyze-imaging', async (req, res) => {
+  try {
+    const { image, imagingType, clinicalContext, patientData, clinicalQuestion } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ error: 'Medical image is required' });
+    }
+
+    // Extract base64 data and media type
+    let imageData = image;
+    let mediaType = 'image/jpeg';
+
+    if (image.includes('base64,')) {
+      const parts = image.split('base64,');
+      imageData = parts[1];
+      const match = parts[0].match(/data:([^;]+)/);
+      if (match) mediaType = match[1];
+    }
+
+    const imagingTypePrompts = {
+      'chest-xray': 'chest X-ray (CXR)',
+      'abdominal-xray': 'abdominal X-ray (AXR)',
+      'ct-head': 'CT scan of the head',
+      'ct-chest': 'CT scan of the chest',
+      'ct-abdomen': 'CT scan of the abdomen/pelvis',
+      'mri-brain': 'MRI of the brain',
+      'mri-spine': 'MRI of the spine',
+      'other': 'medical imaging study'
+    };
+
+    const studyType = imagingTypePrompts[imagingType] || imagingTypePrompts['other'];
+
+    const prompt = `You are NeuroLogic Clinical Decision Support AI specializing in medical imaging interpretation. Analyze this ${studyType} and provide a systematic interpretation.
+
+IMAGING TYPE: ${imagingType}
+
+PATIENT CLINICAL CONTEXT:
+${clinicalContext || 'Not provided'}
+
+PATIENT DATA:
+${JSON.stringify(patientData, null, 2) || 'Not provided'}
+
+CLINICAL QUESTION:
+${clinicalQuestion || 'General interpretation requested'}
+
+Provide a comprehensive imaging interpretation in JSON format:
+{
+  "studyInformation": {
+    "modalityConfirmed": "Type of study identified in image",
+    "viewsPresent": ["AP / PA / Lateral / Axial / Sagittal / Coronal / Other views"],
+    "technicalQuality": "excellent/good/fair/poor/limited",
+    "limitations": ["Any technical limitations affecting interpretation"],
+    "artifactsPresent": ["Motion artifact / Beam hardening / Other"]
+  },
+  "systematicReview": {
+    "primaryFindings": [
+      {
+        "anatomicalLocation": "Specific location of finding",
+        "finding": "Description of finding",
+        "size": "Size/measurements if applicable",
+        "characteristics": "Detailed characteristics",
+        "significance": "Clinical significance",
+        "acuity": "Acute / Chronic / Acute-on-chronic / Indeterminate"
+      }
+    ],
+    "normalFindings": ["Important normal findings to document"],
+    "comparison": "Comparison to prior studies if mentioned in context"
+  },
+  "organSystemReview": {
+    "description": "Systematic review by organ system or anatomical region",
+    "details": [
+      {
+        "system": "Organ system or region",
+        "findings": "Normal or abnormal findings",
+        "significance": "Clinical relevance"
+      }
+    ]
+  },
+  "impressions": [
+    {
+      "finding": "Key impression",
+      "severity": "Normal / Mild / Moderate / Severe / Critical",
+      "urgency": "Critical / Urgent / Non-urgent",
+      "confidence": "High / Moderate / Low"
+    }
+  ],
+  "acuteFindings": {
+    "present": true/false,
+    "criticalFindings": [
+      {
+        "finding": "Critical finding requiring immediate attention",
+        "location": "Anatomical location",
+        "clinicalAction": "Recommended immediate action",
+        "timeframe": "Immediate / Within 1 hour / Within hours"
+      }
+    ]
+  },
+  "differentialDiagnosis": [
+    {
+      "diagnosis": "Possible diagnosis based on imaging",
+      "likelihood": "high/medium/low",
+      "supportingFeatures": ["Imaging features supporting this"],
+      "distinguishingFeatures": ["What would help differentiate"],
+      "additionalWorkup": ["Recommended additional imaging or tests"]
+    }
+  ],
+  "recommendations": {
+    "immediate": [
+      {
+        "recommendation": "Immediate recommendation",
+        "rationale": "Why this is needed now"
+      }
+    ],
+    "followUp": [
+      {
+        "recommendation": "Follow-up recommendation",
+        "timeframe": "When to perform",
+        "rationale": "Why this is recommended"
+      }
+    ],
+    "clinicalCorrelation": [
+      "Specific clinical correlation needed"
+    ],
+    "furtherImaging": [
+      {
+        "modality": "Recommended imaging modality",
+        "indication": "What this would evaluate",
+        "urgency": "Stat / Urgent / Routine"
+      }
+    ]
+  },
+  "clinicalContext": {
+    "correlationWithSymptoms": "How findings correlate with clinical presentation",
+    "unexpectedFindings": ["Findings not explained by clinical history"],
+    "incidentalFindings": [
+      {
+        "finding": "Incidental finding",
+        "significance": "Clinical significance",
+        "followUp": "Follow-up recommendation"
+      }
+    ]
+  },
+  "urgencyAssessment": {
+    "overallUrgency": "Critical / Urgent / Routine",
+    "reasoning": "Why this urgency level",
+    "communicationNeeded": "Immediate physician notification / Routine report / Other",
+    "criticalResultCommunicated": true/false
+  }
+}
+
+IMPORTANT:
+- Provide systematic interpretation (not just identifying abnormalities)
+- Identify any critical or urgent findings first
+- Consider clinical context when interpreting findings
+- Acknowledge limitations if image quality or views are limited
+- Note incidental findings that may be clinically relevant
+- Be specific about locations, sizes, and characteristics
+- Return ONLY valid JSON`;
+
+    console.log(`[${new Date().toISOString()}] Processing medical imaging analysis...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mediaType,
+                data: imageData
+              }
+            },
+            {
+              type: 'text',
+              text: prompt
+            }
+          ]
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const imagingAnalysis = JSON.parse(jsonMatch[0]);
+
+    console.log(`[${new Date().toISOString()}] Medical imaging analysis complete`);
+
+    res.json({
+      success: true,
+      data: imagingAnalysis,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Medical imaging analysis error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Medical imaging analysis failed. Please try again.'
+    });
+  }
+});
+
 // Serve React app for all other routes in production
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
