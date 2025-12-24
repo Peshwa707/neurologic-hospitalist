@@ -1,0 +1,61 @@
+# Node modules
+node_modules
+**/node_modules
+
+# Build files
+client/dist
+client/.vite
+
+# Environment files
+.env
+.env.local
+.env.*.local
+**/.env
+
+# Git
+.git
+.gitignore
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Test files
+**/*.test.js
+**/*.spec.js
+coverage
+
+# Documentation
+*.md
+!README.md
+docs
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Misc
+tmp
+temp
+.cache

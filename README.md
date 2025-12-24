@@ -104,25 +104,29 @@ The app will be available at:
 
 ## 📦 Deployment
 
-### Deploy to Railway (Recommended)
+### Deploy to Railway (Recommended) ⚡
 
-1. **Push to GitHub**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/yourusername/neurologic-hospitalist.git
-   git push -u origin main
-   ```
+**Quick Start:**
+1. Push your code to GitHub
+2. Go to [railway.app](https://railway.app) → "New Project" → "Deploy from GitHub repo"
+3. Select your repository
+4. Add environment variable: `ANTHROPIC_API_KEY` (get from [console.anthropic.com](https://console.anthropic.com/))
+5. Railway auto-detects Dockerfile and deploys!
 
-2. **Deploy on Railway**
-   - Go to [railway.app](https://railway.app)
-   - Click "New Project" → "Deploy from GitHub repo"
-   - Select your repository
-   - Add environment variable: `ANTHROPIC_API_KEY`
-   - Railway will auto-detect and deploy
+**📖 Comprehensive Guides:**
+- **[Quick Deployment Checklist](./DEPLOYMENT_CHECKLIST.md)** - Step-by-step checklist (5-10 min)
+- **[Complete Railway Guide](./RAILWAY_DEPLOYMENT.md)** - Full deployment documentation with troubleshooting
 
-### Deploy to Render
+**Railway automatically provides:**
+- ✅ HTTPS & CDN
+- ✅ Health checks
+- ✅ Automatic deployments on push
+- ✅ Built-in monitoring
+- ✅ Zero-downtime deployments
+
+### Deploy to Other Platforms
+
+#### Render
 
 1. Create a new Web Service on [render.com](https://render.com)
 2. Configure:
