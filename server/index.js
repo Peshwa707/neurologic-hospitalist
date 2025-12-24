@@ -24,10 +24,20 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Runtime configuration for API key
+let runtimeConfig = {
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || null
+};
+
+// Initialize Anthropic client with runtime config support
+function getAnthropicClient() {
+  if (!runtimeConfig.anthropicApiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not configured. Please set it in Settings.');
+  }
+  return new Anthropic({
+    apiKey: runtimeConfig.anthropicApiKey,
+  });
+}
 
 // Middleware
 app.use(cors());
@@ -40,7 +50,68 @@ if (process.env.NODE_ENV === 'production') {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'NeuroLogic Hospitalist Assistant', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    service: 'NeuroLogic Hospitalist Assistant',
+    timestamp: new Date().toISOString(),
+    apiKeyConfigured: !!runtimeConfig.anthropicApiKey
+  });
+});
+
+// Configuration endpoints
+app.get('/api/config/status', (req, res) => {
+  res.json({
+    success: true,
+    apiKeyConfigured: !!runtimeConfig.anthropicApiKey,
+    apiKeySource: process.env.ANTHROPIC_API_KEY ? 'environment' : (runtimeConfig.anthropicApiKey ? 'runtime' : 'none')
+  });
+});
+
+app.post('/api/config/api-key', (req, res) => {
+  try {
+    const { apiKey } = req.body;
+
+    if (!apiKey || typeof apiKey !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required and must be a string'
+      });
+    }
+
+    // Validate API key format (Anthropic keys start with sk-ant-)
+    if (!apiKey.startsWith('sk-ant-')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid API key format. Anthropic API keys should start with "sk-ant-"'
+      });
+    }
+
+    // Test the API key by creating a client
+    try {
+      const testClient = new Anthropic({ apiKey });
+      // If we get here, the key format is valid
+      runtimeConfig.anthropicApiKey = apiKey;
+
+      console.log('[Config] API key updated successfully via runtime configuration');
+
+      res.json({
+        success: true,
+        message: 'API key configured successfully',
+        apiKeyConfigured: true
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid API key. Please check your key from console.anthropic.com'
+      });
+    }
+  } catch (error) {
+    console.error('Config error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to configure API key'
+    });
+  }
 });
 
 // Main analysis endpoint
@@ -135,7 +206,7 @@ ${transcript || 'No dictation provided'}`;
 
     console.log(`[${new Date().toISOString()}] Processing analysis request...`);
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 6000,
       messages: [
@@ -197,7 +268,7 @@ app.post('/api/care-progression', async (req, res) => {
       return res.status(400).json({ error: 'Clinical context is required' });
     }
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 3000,
       messages: [
@@ -271,7 +342,7 @@ app.post('/api/discharge-readiness', async (req, res) => {
       return res.status(400).json({ error: 'Clinical context is required' });
     }
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 3000,
       messages: [
@@ -382,7 +453,7 @@ app.post('/api/enhance-transcript', async (req, res) => {
       return res.status(400).json({ error: 'Raw transcript is required' });
     }
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
       messages: [
@@ -412,7 +483,7 @@ app.post('/api/lookup-codes', async (req, res) => {
   try {
     const { query, codeType } = req.body;
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1000,
       messages: [
@@ -705,7 +776,7 @@ Return ONLY valid JSON.`;
 
     console.log(`[${new Date().toISOString()}] Processing clinical decision support request...`);
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4000,
       messages: [
@@ -935,7 +1006,7 @@ Return ONLY valid JSON.`;
 
     console.log(`[${new Date().toISOString()}] Processing alternative diagnosis exploration...`);
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 5000,
       messages: [
@@ -1089,7 +1160,7 @@ Return ONLY valid JSON.`;
 
     console.log(`[${new Date().toISOString()}] Processing cognitive bias analysis...`);
 
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 4000,
       messages: [

@@ -16,17 +16,69 @@ function App() {
   const [activeTab, setActiveTab] = useState('context');
   const [activeResultTab, setActiveResultTab] = useState('note');
   const [apiStatus, setApiStatus] = useState('checking');
-  
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [savingApiKey, setSavingApiKey] = useState(false);
+
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Check API health on mount
+  // Check API health and configuration status on mount
   useEffect(() => {
     fetch(`${API_URL}/api/health`)
       .then(res => res.json())
-      .then(() => setApiStatus('connected'))
+      .then(data => {
+        setApiStatus('connected');
+        setApiKeyConfigured(data.apiKeyConfigured || false);
+        // Show settings modal if API key is not configured
+        if (!data.apiKeyConfigured) {
+          setShowSettings(true);
+        }
+      })
       .catch(() => setApiStatus('disconnected'));
   }, []);
+
+  // Function to save API key
+  const saveApiKey = async () => {
+    if (!apiKey.trim()) {
+      setError('Please enter an API key');
+      return;
+    }
+
+    setSavingApiKey(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/config/api-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKey.trim() })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to save API key');
+      }
+
+      setApiKeyConfigured(true);
+      setShowSettings(false);
+      setApiKey(''); // Clear the input for security
+      setApiStatus('connected');
+
+      // Refresh health check
+      fetch(`${API_URL}/api/health`)
+        .then(res => res.json())
+        .then(data => setApiKeyConfigured(data.apiKeyConfigured || false));
+
+    } catch (err) {
+      console.error('API key save error:', err);
+      setError(err.message || 'Failed to save API key. Please check your key and try again.');
+    } finally {
+      setSavingApiKey(false);
+    }
+  };
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -230,6 +282,30 @@ function App() {
             <span className="status-dot"></span>
             {apiStatus === 'connected' ? 'Connected' : apiStatus === 'checking' ? 'Checking...' : 'Disconnected'}
           </span>
+          {!apiKeyConfigured && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="settings-btn warning"
+              title="Configure API Key"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Setup Required
+            </button>
+          )}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="settings-btn"
+            title="Settings"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v6m0 6v6M6 12H1m6 0h6m6 0h5"/>
+            </svg>
+          </button>
           <span className="badge">AI Clinical Decision Support</span>
         </div>
       </header>
@@ -912,6 +988,124 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => !apiKeyConfigured ? null : setShowSettings(false)}>
+          <div className="modal-content settings-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M12 1v6m0 6v6M6 12H1m6 0h6m6 0h5"/>
+                </svg>
+                Settings
+              </h2>
+              {apiKeyConfigured && (
+                <button onClick={() => setShowSettings(false)} className="modal-close">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            <div className="modal-body">
+              {!apiKeyConfigured && (
+                <div className="setup-notice">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                  <h3>Setup Required</h3>
+                  <p>An Anthropic API key is required to use NeuroLogic Hospitalist Assistant.</p>
+                </div>
+              )}
+
+              <div className="settings-section">
+                <label className="settings-label">
+                  <span className="label-text">
+                    <strong>Anthropic API Key</strong>
+                    {apiKeyConfigured && <span className="configured-badge">✓ Configured</span>}
+                  </span>
+                  <span className="label-hint">
+                    Get your API key from{' '}
+                    <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">
+                      console.anthropic.com
+                    </a>
+                  </span>
+                </label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={apiKeyConfigured ? "Enter new key to update..." : "sk-ant-api03-..."}
+                  className="settings-input"
+                  onKeyPress={(e) => e.key === 'Enter' && saveApiKey()}
+                />
+                <div className="settings-help">
+                  <p>
+                    <strong>Your API key is stored securely</strong> in the application runtime and is never logged or transmitted except to Anthropic's API.
+                  </p>
+                  <p>
+                    <strong>New to Anthropic?</strong> Sign up for free credits at{' '}
+                    <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer">
+                      console.anthropic.com
+                    </a>
+                  </p>
+                </div>
+              </div>
+
+              {error && (
+                <div className="settings-error">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  {error}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              {apiKeyConfigured && (
+                <button
+                  onClick={() => {
+                    setShowSettings(false);
+                    setApiKey('');
+                    setError('');
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                onClick={saveApiKey}
+                disabled={savingApiKey || !apiKey.trim()}
+                className="btn-primary"
+              >
+                {savingApiKey ? (
+                  <>
+                    <div className="spinner"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    {apiKeyConfigured ? 'Update API Key' : 'Save & Continue'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
