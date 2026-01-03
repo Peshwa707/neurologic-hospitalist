@@ -44,6 +44,13 @@ import {
   generateConservativeManagement,
   generateOptimizationPlan
 } from './healthAnalytics.js';
+import {
+  findRelevantEvidence,
+  getEvidenceByCondition,
+  getAllConditions as getAllEvidenceConditions,
+  formatEvidenceForNote,
+  generateEvidencePromptEnhancement
+} from './medicalEvidenceService.js';
 
 dotenv.config();
 
@@ -1358,6 +1365,701 @@ app.get('/api/biases-fallacies-reference', (req, res) => {
   } catch (error) {
     console.error('Reference retrieval error:', error);
     res.status(500).json({ error: 'Failed to retrieve reference' });
+  }
+});
+
+// ==================== Hospitalist Assistant Endpoints ====================
+
+// Get available medical evidence conditions
+app.get('/api/evidence/conditions', (req, res) => {
+  try {
+    const conditions = getAllEvidenceConditions();
+    res.json({
+      success: true,
+      conditions,
+      count: conditions.length
+    });
+  } catch (error) {
+    console.error('Evidence conditions error:', error);
+    res.status(500).json({ error: 'Failed to retrieve evidence conditions' });
+  }
+});
+
+// Get evidence for specific condition
+app.get('/api/evidence/:condition', (req, res) => {
+  try {
+    const evidence = getEvidenceByCondition(req.params.condition);
+
+    if (!evidence) {
+      return res.status(404).json({
+        error: 'Evidence not found',
+        available: getAllEvidenceConditions()
+      });
+    }
+
+    res.json({ success: true, evidence });
+  } catch (error) {
+    console.error('Evidence retrieval error:', error);
+    res.status(500).json({ error: 'Failed to retrieve evidence' });
+  }
+});
+
+// Parse raw clinical data (labs, vitals, imaging reports)
+app.post('/api/hospitalist/parse-clinical-data', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const { rawData, dataType } = req.body;
+
+    if (!rawData) {
+      return res.status(400).json({ error: 'Raw clinical data is required' });
+    }
+
+    const prompt = `You are a medical data parsing assistant. Parse the following raw clinical data and extract structured information.
+
+DATA TYPE: ${dataType || 'mixed'}
+
+RAW DATA:
+${rawData}
+
+Parse and return a JSON object with the following structure:
+{
+  "dataType": "labs|vitals|imaging|notes|medications|mixed",
+  "parsedData": {
+    "labs": [
+      {"name": "Lab name", "value": "value", "unit": "unit", "reference": "reference range", "flag": "H/L/normal", "timestamp": "if available"}
+    ],
+    "vitals": [
+      {"name": "Vital sign", "value": "value", "unit": "unit", "timestamp": "if available"}
+    ],
+    "imaging": [
+      {"study": "Study type", "findings": "Key findings", "impression": "Impression", "date": "if available"}
+    ],
+    "medications": [
+      {"name": "Drug name", "dose": "dose", "route": "route", "frequency": "frequency", "indication": "if mentioned"}
+    ],
+    "problems": [
+      {"problem": "Problem/diagnosis", "status": "active/resolved/chronic", "icd10": "if apparent"}
+    ],
+    "procedures": [
+      {"procedure": "Procedure name", "date": "if available", "findings": "if any"}
+    ],
+    "allergies": ["allergy1", "allergy2"],
+    "narrative": "Any important clinical narrative or notes"
+  },
+  "abnormalFindings": [
+    {"finding": "Abnormal finding", "severity": "critical/high/moderate/low", "category": "category"}
+  ],
+  "clinicalSummary": "Brief summary of the key clinical information"
+}
+
+Return ONLY valid JSON.`;
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 3000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse response');
+    }
+
+    res.json({
+      success: true,
+      data: JSON.parse(jsonMatch[0]),
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Clinical data parsing error:', error);
+    res.status(500).json({ error: 'Failed to parse clinical data' });
+  }
+});
+
+// Generate H&P Note with Evidence-Based Assessment and Plan
+app.post('/api/hospitalist/generate-hp', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const {
+      transcript,
+      clinicalContext,
+      priorNotes,
+      labResults,
+      imagingResults,
+      patientData,
+      includeEvidence
+    } = req.body;
+
+    if (!transcript && !clinicalContext) {
+      return res.status(400).json({
+        error: 'Either transcript or clinical context is required'
+      });
+    }
+
+    // Combine all clinical information
+    const combinedContext = `
+PATIENT DATA:
+${JSON.stringify(patientData, null, 2) || 'Not provided'}
+
+PRIOR NOTES:
+${priorNotes || 'Not provided'}
+
+LAB RESULTS:
+${labResults || 'Not provided'}
+
+IMAGING RESULTS:
+${imagingResults || 'Not provided'}
+
+ADDITIONAL CLINICAL CONTEXT:
+${clinicalContext || 'Not provided'}
+`;
+
+    // Find relevant medical evidence based on clinical content
+    const searchContent = `${transcript || ''} ${clinicalContext || ''} ${priorNotes || ''}`;
+    const relevantEvidence = includeEvidence !== false ? findRelevantEvidence(searchContent) : [];
+    const evidencePrompt = generateEvidencePromptEnhancement(relevantEvidence);
+
+    const systemPrompt = `You are NeuroLogic Hospitalist Assistant, an AI clinical documentation system for hospitalist physicians. Generate a comprehensive History and Physical (H&P) note with evidence-based recommendations and citations.
+
+Your H&P note should be thorough, professionally formatted, and suitable for the medical record.
+
+${evidencePrompt}
+
+Format your response as valid JSON with this exact structure:
+{
+  "structuredNote": {
+    "sections": [
+      {"title": "CHIEF COMPLAINT", "content": "Primary reason for admission"},
+      {"title": "HISTORY OF PRESENT ILLNESS", "content": "Detailed chronological narrative of illness"},
+      {"title": "REVIEW OF SYSTEMS", "content": "Systematic review by organ system"},
+      {"title": "PAST MEDICAL HISTORY", "content": "Relevant medical history"},
+      {"title": "PAST SURGICAL HISTORY", "content": "Prior surgeries"},
+      {"title": "MEDICATIONS", "content": "Current medications with doses"},
+      {"title": "ALLERGIES", "content": "Allergies with reactions"},
+      {"title": "SOCIAL HISTORY", "content": "Social factors affecting health"},
+      {"title": "FAMILY HISTORY", "content": "Relevant family history"},
+      {"title": "PHYSICAL EXAMINATION", "content": "Comprehensive exam findings"},
+      {"title": "DIAGNOSTIC DATA", "content": "Labs, imaging, and other studies"},
+      {"title": "ASSESSMENT", "content": "Clinical assessment with numbered problem list and differential diagnoses"},
+      {"title": "PLAN", "content": "Detailed evidence-based plan organized by problem"}
+    ]
+  },
+  "evidenceBasedAssessment": {
+    "problemList": [
+      {
+        "problem": "Problem name",
+        "assessment": "Clinical assessment of this problem",
+        "differentials": ["Differential diagnoses"],
+        "evidence": "Evidence-based reasoning",
+        "citations": ["Relevant citations in Author et al., Year format"]
+      }
+    ],
+    "overallAcuity": "Critical/High/Moderate/Low",
+    "keyUncertainties": ["Key diagnostic uncertainties"]
+  },
+  "evidenceBasedPlan": {
+    "problemBasedPlan": [
+      {
+        "problem": "Problem name",
+        "interventions": [
+          {
+            "intervention": "Specific intervention",
+            "rationale": "Evidence-based rationale",
+            "citation": "Citation in Author et al., Year format",
+            "evidenceLevel": "Level of evidence (e.g., Class I Level A, Strong High)"
+          }
+        ],
+        "monitoring": ["What to monitor"],
+        "goals": ["Treatment goals"]
+      }
+    ],
+    "diagnosticPlan": [
+      {"test": "Test name", "rationale": "Why needed", "priority": "Stat/Urgent/Routine", "citation": "If evidence-based"}
+    ],
+    "consultations": [
+      {"specialty": "Service", "reason": "Reason for consult", "urgency": "Stat/Urgent/Routine"}
+    ],
+    "disposition": {
+      "recommendation": "Level of care recommendation",
+      "rationale": "Why this level of care",
+      "anticipatedLOS": "Expected length of stay"
+    }
+  },
+  "references": [
+    {
+      "citation": "Full citation",
+      "guideline": "Guideline name if applicable",
+      "year": "Year",
+      "relevance": "How this applies to the case"
+    }
+  ],
+  "icd10Codes": [
+    {"code": "X00.0", "description": "Description", "type": "principal/secondary"}
+  ],
+  "cptCodes": [
+    {"code": "99223", "description": "High complexity H&P"}
+  ],
+  "clinicalAlerts": [
+    {"alert": "Important clinical alert", "severity": "high/medium/low", "action": "Required action"}
+  ]
+}
+
+Instructions:
+1. Create a comprehensive H&P note from the provided information
+2. Use the transcript for history and exam details
+3. Integrate lab results, imaging, and prior notes into the assessment
+4. For each problem, provide evidence-based recommendations WITH SPECIFIC CITATIONS
+5. Use format: [Author et al., Year] or [Guideline Abbreviation Year] for inline citations
+6. Include a references section with full citations
+7. Be specific with medication doses, lab values, and clinical recommendations
+8. Identify any red flags or urgent issues
+
+IMPORTANT: Return ONLY valid JSON.`;
+
+    const userContent = `DICTATION/TRANSCRIPT (Patient Encounter):
+${transcript || 'No dictation provided'}
+
+---
+CLINICAL CONTEXT:
+${combinedContext}`;
+
+    console.log(`[${new Date().toISOString()}] Generating evidence-based H&P note...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 8000,
+      messages: [
+        {
+          role: 'user',
+          content: `${systemPrompt}\n\n${userContent}`
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const hpResult = JSON.parse(jsonMatch[0]);
+
+    // Add the relevant evidence that was used
+    hpResult.evidenceSources = relevantEvidence;
+
+    console.log(`[${new Date().toISOString()}] H&P note generated successfully`);
+
+    res.json({
+      success: true,
+      data: hpResult,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('H&P generation error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'H&P generation failed. Please try again.'
+    });
+  }
+});
+
+// Generate Progress Note with Evidence-Based Assessment and Plan
+app.post('/api/hospitalist/generate-progress-note', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const {
+      transcript,
+      clinicalContext,
+      hospitalDay,
+      admittingDiagnosis,
+      activeProblems,
+      overnightEvents,
+      labResults,
+      imagingResults,
+      currentMedications,
+      patientData,
+      includeEvidence
+    } = req.body;
+
+    if (!transcript && !clinicalContext) {
+      return res.status(400).json({
+        error: 'Either transcript or clinical context is required'
+      });
+    }
+
+    // Find relevant medical evidence
+    const searchContent = `${transcript || ''} ${clinicalContext || ''} ${admittingDiagnosis || ''} ${activeProblems?.join(' ') || ''}`;
+    const relevantEvidence = includeEvidence !== false ? findRelevantEvidence(searchContent) : [];
+    const evidencePrompt = generateEvidencePromptEnhancement(relevantEvidence);
+
+    const systemPrompt = `You are NeuroLogic Hospitalist Assistant. Generate a comprehensive hospitalist progress note with evidence-based recommendations and citations.
+
+Hospital Day: ${hospitalDay || 'Not specified'}
+Admitting Diagnosis: ${admittingDiagnosis || 'Not specified'}
+
+${evidencePrompt}
+
+Format your response as valid JSON with this exact structure:
+{
+  "structuredNote": {
+    "sections": [
+      {"title": "DATE/TIME", "content": "Note date and hospital day"},
+      {"title": "SUBJECTIVE", "content": "Patient's overnight course, symptoms, concerns"},
+      {"title": "OVERNIGHT EVENTS", "content": "Notable events, vitals trends, nursing concerns"},
+      {"title": "OBJECTIVE", "content": "Vital signs, physical exam, I/Os if relevant"},
+      {"title": "LABS/STUDIES", "content": "Today's labs and any new imaging"},
+      {"title": "ASSESSMENT & PLAN", "content": "Problem-based assessment and plan with evidence-based recommendations"}
+    ]
+  },
+  "problemBasedAssessment": [
+    {
+      "problemNumber": 1,
+      "problem": "Problem name",
+      "status": "Improving/Stable/Worsening/Resolved/New",
+      "assessment": "Brief assessment of current status",
+      "evidence": "Evidence-based considerations",
+      "plan": [
+        {
+          "action": "Specific action",
+          "rationale": "Why this action",
+          "citation": "Citation if evidence-based [Author et al., Year]",
+          "evidenceLevel": "Level of evidence"
+        }
+      ],
+      "monitoring": ["Parameters to monitor"],
+      "escalation": "When to escalate care"
+    }
+  ],
+  "careProgression": {
+    "currentPhase": "Acute/Stabilization/Recovery/Discharge Planning",
+    "completedMilestones": ["Milestones achieved"],
+    "pendingMilestones": ["Milestones remaining"],
+    "barriers": ["Barriers to progress"],
+    "anticipatedDischargePlan": "Expected disposition and timeline"
+  },
+  "dischargeReadiness": {
+    "readinessScore": 0-100,
+    "criteriaMet": ["Met criteria"],
+    "criteriaNotMet": ["Unmet criteria"],
+    "estimatedDischarge": "Date or timeframe"
+  },
+  "references": [
+    {
+      "citation": "Full citation used in plan",
+      "relevance": "How this applies"
+    }
+  ],
+  "icd10Codes": [
+    {"code": "X00.0", "description": "Description"}
+  ],
+  "cptCodes": [
+    {"code": "99233", "description": "High complexity subsequent care"}
+  ],
+  "clinicalAlerts": [
+    {"alert": "Alert", "severity": "critical/high/medium", "action": "Required action"}
+  ],
+  "communicationNeeds": [
+    {"with": "Family/PCP/Consultant", "topic": "Discussion topic", "urgency": "Today/This admission"}
+  ]
+}
+
+Instructions:
+1. Focus on interval changes since last note
+2. For each active problem, provide current status and evidence-based plan
+3. Include specific citations for therapeutic decisions [Author et al., Year]
+4. Assess discharge readiness realistically
+5. Identify barriers and next steps for care progression
+6. Flag any concerns requiring immediate attention
+
+IMPORTANT: Return ONLY valid JSON.`;
+
+    const userContent = `DICTATION/TRANSCRIPT:
+${transcript || 'No dictation provided'}
+
+ACTIVE PROBLEMS:
+${activeProblems?.join('\n') || clinicalContext || 'Not specified'}
+
+OVERNIGHT EVENTS:
+${overnightEvents || 'No significant events'}
+
+TODAY'S LABS:
+${labResults || 'Pending/Not available'}
+
+IMAGING:
+${imagingResults || 'None new'}
+
+CURRENT MEDICATIONS:
+${currentMedications || 'See medication list'}
+
+ADDITIONAL CONTEXT:
+${clinicalContext || 'None'}`;
+
+    console.log(`[${new Date().toISOString()}] Generating evidence-based progress note...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 6000,
+      messages: [
+        {
+          role: 'user',
+          content: `${systemPrompt}\n\n${userContent}`
+        }
+      ]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse JSON from response');
+    }
+
+    const progressNoteResult = JSON.parse(jsonMatch[0]);
+    progressNoteResult.evidenceSources = relevantEvidence;
+
+    console.log(`[${new Date().toISOString()}] Progress note generated successfully`);
+
+    res.json({
+      success: true,
+      data: progressNoteResult,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Progress note generation error:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again later.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Progress note generation failed.'
+    });
+  }
+});
+
+// Enhance transcript from ambient listening
+app.post('/api/hospitalist/enhance-ambient-transcript', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const { rawTranscript, encounterType, speakerIdentification } = req.body;
+
+    if (!rawTranscript) {
+      return res.status(400).json({ error: 'Raw transcript is required' });
+    }
+
+    const prompt = `You are a medical transcription specialist. Enhance this raw ambient transcript from a ${encounterType || 'patient encounter'}.
+
+RAW TRANSCRIPT:
+${rawTranscript}
+
+Speaker Identification Hints: ${speakerIdentification || 'Not provided'}
+
+Tasks:
+1. Clean up speech-to-text errors
+2. Fix medical terminology spelling
+3. Add punctuation and paragraph breaks
+4. Identify speakers (Physician/Patient/Family/Nurse) if possible
+5. Extract key clinical information
+6. Maintain all medically relevant content
+
+Return a JSON object:
+{
+  "enhancedTranscript": "Cleaned up, readable transcript with speaker labels",
+  "speakers": ["List of identified speakers"],
+  "clinicalExtraction": {
+    "chiefComplaint": "Main concern",
+    "historyOfPresentIllness": "Key HPI elements",
+    "reviewOfSystems": {
+      "positive": ["Positive findings"],
+      "negative": ["Pertinent negatives"]
+    },
+    "physicalExamMentioned": ["Exam findings mentioned"],
+    "assessmentMentioned": ["Any diagnoses or assessments mentioned"],
+    "planMentioned": ["Any plan items discussed"],
+    "patientQuestions": ["Questions asked by patient/family"],
+    "counselingProvided": ["Education or counseling given"]
+  },
+  "duration": "Estimated encounter duration if determinable",
+  "complexityIndicators": {
+    "medicalDecisionMaking": "Low/Moderate/High",
+    "dataReviewed": ["Types of data reviewed"],
+    "riskLevel": "Low/Moderate/High"
+  }
+}
+
+Return ONLY valid JSON.`;
+
+    console.log(`[${new Date().toISOString()}] Enhancing ambient transcript...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse response');
+    }
+
+    console.log(`[${new Date().toISOString()}] Ambient transcript enhanced successfully`);
+
+    res.json({
+      success: true,
+      data: JSON.parse(jsonMatch[0]),
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Transcript enhancement error:', error);
+    res.status(500).json({ error: 'Failed to enhance transcript' });
+  }
+});
+
+// Generate evidence summary for a clinical scenario
+app.post('/api/hospitalist/evidence-summary', phiProtectionMiddleware, async (req, res) => {
+  try {
+    const { clinicalScenario, specificQuestions } = req.body;
+
+    if (!clinicalScenario) {
+      return res.status(400).json({ error: 'Clinical scenario is required' });
+    }
+
+    // Find relevant evidence
+    const relevantEvidence = findRelevantEvidence(clinicalScenario);
+    const evidencePrompt = generateEvidencePromptEnhancement(relevantEvidence);
+
+    const prompt = `You are an evidence-based medicine expert. Provide a comprehensive evidence summary for the following clinical scenario.
+
+CLINICAL SCENARIO:
+${clinicalScenario}
+
+SPECIFIC QUESTIONS:
+${specificQuestions?.join('\n') || 'Provide general evidence-based recommendations'}
+
+AVAILABLE GUIDELINE EVIDENCE:
+${evidencePrompt}
+
+Provide a JSON response:
+{
+  "evidenceSummary": {
+    "clinicalQuestion": "Reformulated clinical question(s)",
+    "keyRecommendations": [
+      {
+        "recommendation": "Specific recommendation",
+        "strength": "Strong/Conditional/Expert Opinion",
+        "quality": "High/Moderate/Low/Very Low",
+        "source": "Guideline or study source",
+        "citation": "Full citation",
+        "applicability": "How this applies to this patient"
+      }
+    ],
+    "criticalEvidence": [
+      {
+        "finding": "Key evidence finding",
+        "study": "Study name/type",
+        "citation": "Citation",
+        "clinicalImplication": "What this means for practice"
+      }
+    ],
+    "controversies": [
+      "Areas of controversy or evolving evidence"
+    ],
+    "gaps": [
+      "Evidence gaps relevant to this case"
+    ]
+  },
+  "practiceRecommendations": {
+    "doRecommend": [
+      {"action": "Recommended action", "level": "Evidence level", "citation": "Citation"}
+    ],
+    "doNotRecommend": [
+      {"action": "Not recommended", "level": "Evidence level", "reason": "Why not"}
+    ],
+    "consider": [
+      {"action": "To consider based on clinical judgment", "context": "When appropriate"}
+    ]
+  },
+  "references": [
+    {
+      "citation": "Full formatted citation",
+      "url": "DOI or URL if known",
+      "keyFindings": "Summary of relevant findings"
+    }
+  ],
+  "disclaimer": "Evidence limitations and need for clinical judgment"
+}
+
+IMPORTANT: Be specific with citations and evidence levels. Return ONLY valid JSON.`;
+
+    console.log(`[${new Date().toISOString()}] Generating evidence summary...`);
+
+    const message = await getAnthropicClient().messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const responseText = message.content[0].text;
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('Could not parse response');
+    }
+
+    const summaryResult = JSON.parse(jsonMatch[0]);
+    summaryResult.guidelineEvidence = relevantEvidence;
+
+    console.log(`[${new Date().toISOString()}] Evidence summary generated`);
+
+    res.json({
+      success: true,
+      data: summaryResult,
+      usage: {
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens
+      }
+    });
+
+  } catch (error) {
+    console.error('Evidence summary error:', error);
+    res.status(500).json({ error: 'Failed to generate evidence summary' });
   }
 });
 

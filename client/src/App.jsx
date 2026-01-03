@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import './App.css';
 import EMR from './components/EMR';
+import HospitalistAssistant from './components/HospitalistAssistant';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -667,7 +668,22 @@ function App() {
                 </svg>
                 EMR
               </button>
+              <button
+                onClick={() => setActiveTab('hospitalist')}
+                className={`tab ${activeTab === 'hospitalist' ? 'active' : ''}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                </svg>
+                Hospitalist
+              </button>
             </div>
+
+            {activeTab === 'hospitalist' && (
+              <div className="hospitalist-wrapper">
+                <HospitalistAssistant />
+              </div>
+            )}
 
             {activeTab === 'emr' && (
               <div className="emr-wrapper">
